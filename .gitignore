@@ -30,3 +30,4 @@ web/coverage/
 .vscode/
 *.log
 .DS_Store
+*.tsbuildinfo
