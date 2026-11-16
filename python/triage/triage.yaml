@@ -1,0 +1,46 @@
+# 分诊配置。配置内容 + 后端名/版本的哈希就是 triage_version。
+# 阈值均为占位，等 SPEC 第 10 节评测后再定。
+
+backend: rules            # rules | llm_json | systemone_http；无 LLM_API_KEY 时 llm_json 自动用 mock
+
+thresholds:
+  retries_high_min: 2     # 任一阶段重试次数 >= 该值
+  slow_stage_ratio: 3.0   # duration_ratio >
+  cost_spike_ratio: 3.0   # cost_ratio >
+  baseline_window: 200
+  baseline_min_samples: 20
+
+# 下游声明式规则：比较自己上报的 metric。stage 可以是 "job"（根 span 上的 metric）。
+rules:
+  - id: missing_input_pages
+    hard: false
+    left:  {stage: structure, metric: pages_mapped}
+    op: "<"
+    right: {stage: job, metric: answer_pages}
+  - id: model_disagreement
+    hard: false
+    left:  {stage: score, metric: disagreement_flag}
+    op: ">="
+    right: {value: 1}
+
+routing:
+  pass_if:     {p_normal_gte: 0.90, no_rules_fired: true}
+  escalate_if: {p_failed_gte: 0.50, or_hard_rule: true, or_p_suspicious_gte: 0.40}
+  otherwise: alert
+  s2_budget_per_hour: 30
+
+review:
+  if_s2_confidence_lt: 0.70
+  or_severity_gte: 2
+
+s2:
+  enabled: true
+  include_content: false   # 只有下游开了 capture_content 且这里为 true 才带正文
+
+worker:
+  queue: job_finished
+  dlq: job_finished_dlq
+  visibility_timeout_s: 60
+  batch: 10
+  max_reads: 10
+  idle_sleep_s: 2

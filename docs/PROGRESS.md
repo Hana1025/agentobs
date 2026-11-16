@@ -41,3 +41,13 @@
 - 正文属性 `agentobs.content.*` 默认折叠，`VITE_SHOW_CONTENT` 构建变量控制是否允许显示。
 - 单测：`waterfall/layout.test.ts`、`lib/filters.test.ts`、`pages/ReviewQueue.test.tsx`。
 - metrics profile（Prometheus 抓取、告警、Grafana 数据源和两个面板）在 M1 已写。
+
+## M4 队列与 System 1（代码完成，未验证）
+
+- server：`triage/{InternalController,TriageRepository,BaselineService,TriageRequest}`。baselines 除中位耗时/成本外还返回每个 stage 上 `agentobs.metric.*` 的中位数（`medianMetrics`），供 S1 判断 score 之类的分布偏离——规格字段上的扩展。
+- Python：`triage/{config,models,state,rules,router,client,metrics,worker}.py`，`backends/{rules_backend,llm_json,systemone_http}.py`，默认配置 `triage/triage.yaml`。
+- `llm_json` 是每个问题一次调用、`max_tokens=1`、首 token 的 logprobs 转概率；供应商不支持 logprobs 时回退到 k=5 采样投票。规格里提到 JSON schema 输出，这里改为单字母答案以便拿 logprobs（JSON 输出的 logprobs 不好定位答案 token）。
+- `MockLLMJsonDecider` 是确定性 mock，用基线 metric 抓 score_outlier / scratch_as_answer（规则抓不到的类型）。
+- 声明式规则默认带两条示例（missing_input_pages、model_disagreement），`right` 支持常量 `{value: N}`。
+- worker 用 InMemoryQueue + FakeServer 覆盖时序陷阱、DLQ、重复投递、预算降级；pgmq 事务回滚集成测试在 `tests/test_pgmq_integration.py`（需要 Docker，`-m integration`）。
+- Testcontainers 的 Python 测试自己 `docker build` deploy/postgres 镜像，首次较慢（编译 pgmq）。
