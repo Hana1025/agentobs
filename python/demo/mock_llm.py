@@ -1,0 +1,72 @@
+"""mock 模型客户端：接口形状模仿 openai 的 chat.completions.create，行为由种子和 FaultPlan 决定。"""
+
+from __future__ import annotations
+
+import json
+import random
+import time
+from dataclasses import dataclass
+from typing import Any
+
+from demo.faults import FaultPlan
+
+
+class MockHTTPError(Exception):
+    def __init__(self, status: int, retry_after: float | None = None):
+        super().__init__(f"mock http {status}")
+        self.status_code = status
+        headers = {"retry-after": str(retry_after)} if retry_after else {}
+        self.response = _Resp(status, headers)
+
+
+@dataclass
+class _Resp:
+    status_code: int
+    headers: dict[str, str]
+
+
+class MockTimeout(TimeoutError):
+    pass
+
+
+class MockModelCall:
+    """一次 stage 内模型调用的 mock 行为。每个 stage 新建一个（attempt 计数从 1 开始）。"""
+
+    def __init__(self, rng: random.Random, plan: FaultPlan, stage: str, model: str, speed: float = 1.0):
+        self.rng = rng
+        self.plan = plan
+        self.stage = stage
+        self.model = model
+        self.attempt = 0
+        self.speed = speed  # <1 更快（CI 用）
+        self.injected = plan.stage == stage
+
+    def create(self, *, timeout: float, payload: dict[str, Any], base_latency: float) -> dict[str, Any]:
+        self.attempt += 1
+        p = self.plan
+        if self.injected and p.all_attempts_503:
+            time.sleep(0.05 * self.speed)
+            raise MockHTTPError(503)
+        if self.injected and p.rate_limit_first_attempt and self.attempt == 1:
+            raise MockHTTPError(429, retry_after=0.2 * self.speed)
+        if self.injected and p.timeout_all_attempts:
+            time.sleep(timeout)
+            raise MockTimeout(f"mock timeout after {timeout}s")
+        latency = max(0.01, self.rng.gauss(base_latency, base_latency * 0.2)) * self.speed
+        time.sleep(latency)
+        text = json.dumps(payload, ensure_ascii=False)
+        if self.injected and p.corrupt_output:
+            if self.attempt == 1:
+                text = text[: len(text) // 2] + "\x1b\\u00" + text[len(text) // 2 :]  # 非法转义
+            else:
+                text = text.replace(":", ":\x00", 1) + "\x07"  # 控制字符但仍可解析（JSON 字符串外）
+                text = text.replace("\x00", "")  # 字符串外的 NUL 会破坏解析；保留 \x07 在末尾之外
+                text = text + "\x07"
+        in_tokens = len(text) // 3 + self.rng.randint(50, 200)
+        out_tokens = len(text) // 4
+        return {
+            "id": f"mock-{self.rng.randrange(1 << 32):08x}",
+            "model": self.model,
+            "choices": [{"message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": in_tokens, "completion_tokens": out_tokens},
+        }

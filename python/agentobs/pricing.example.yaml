@@ -1,0 +1,11 @@
+# model -> USD / 1M tokens。合成示例，不代表任何真实供应商价格。
+models:
+  mock/fast:
+    input: 0.10
+    output: 0.40
+  mock/strong:
+    input: 2.00
+    output: 8.00
+  mock/judge:
+    input: 1.00
+    output: 4.00
