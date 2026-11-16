@@ -31,3 +31,13 @@
 - M3：server 公开查询接口（`GET /api/traces`、`/api/traces/{id}`、`/api/metrics/summary`、`/api/me`）、OpenAPI 生成 TS 类型、web 总览/列表/详情（SVG 瀑布图）、nginx 已就绪、metrics profile 配置已就绪（prometheus/alerts/grafana 面板已写）。
 - M4：`python/triage`（worker、state、rules、router、backends）、内部 triage/baselines 接口、事务模式集成测试。
 - M5：System 2、复核接口与页面、eval 脚本与 CI 回归门。
+
+## M3 查询 API、看板与指标（代码完成，未验证）
+
+- server：`query/TraceQueryService`（手写 SQL；列表按 project_id + 时间过滤，31 天上限，size ≤ 100）、`TraceController`（/api/traces、/api/traces/{id}、/api/metrics/summary、/api/me）、`OpenApiConfig`、`review/ReviewBacklogGauge`（60s 刷新）。
+- 列表默认按 severity 降序：severity 取最新 triage 的 `s1_answers.severity.answer`，没有 triage 时为 0。
+- web：路由/布局/API 客户端（openapi-fetch）、总览、列表（筛选同步 URL，默认值不写入 URL）、详情（SVG 瀑布图：折叠、重试虚线、500 行以上窗口化、证据点击高亮并滚动）、复核队列页和评测页（M5 的页面已一并写好，等后端接口）。
+- `web/src/api/schema.ts` 目前是按 DTO 手工对齐的占位（本机无法起 server 生成）；首次能跑 server 时执行 `npm run gen:api` 覆盖，CI 的 api-types 任务会校验。
+- 正文属性 `agentobs.content.*` 默认折叠，`VITE_SHOW_CONTENT` 构建变量控制是否允许显示。
+- 单测：`waterfall/layout.test.ts`、`lib/filters.test.ts`、`pages/ReviewQueue.test.tsx`。
+- metrics profile（Prometheus 抓取、告警、Grafana 数据源和两个面板）在 M1 已写。
