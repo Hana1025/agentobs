@@ -17,11 +17,18 @@ llm_requests_total = Counter(
     "agentobs_llm_requests_total", "LLM call attempts", ["stage", "model", "status"]
 )
 llm_latency_seconds = Histogram(
-    "agentobs_llm_latency_seconds", "LLM attempt latency", ["stage", "model"], buckets=LATENCY_BUCKETS
+    "agentobs_llm_latency_seconds",
+    "LLM attempt latency",
+    ["stage", "model"],
+    buckets=LATENCY_BUCKETS,
 )
-llm_tokens_total = Counter("agentobs_llm_tokens_total", "LLM tokens", ["stage", "model", "direction"])
+llm_tokens_total = Counter(
+    "agentobs_llm_tokens_total", "LLM tokens", ["stage", "model", "direction"]
+)
 llm_cost_usd_total = Counter("agentobs_llm_cost_usd_total", "LLM cost in USD", ["stage", "model"])
-llm_retries_total = Counter("agentobs_llm_retries_total", "LLM retries", ["stage", "model", "reason"])
+llm_retries_total = Counter(
+    "agentobs_llm_retries_total", "LLM retries", ["stage", "model", "reason"]
+)
 output_parse_failures_total = Counter(
     "agentobs_output_parse_failures_total", "LLM output parse failures", ["stage"]
 )

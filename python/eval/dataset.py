@@ -49,7 +49,11 @@ class EvalCase:
 
 
 def _ns_iso(ns: int) -> str:
-    return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return (
+        datetime.fromtimestamp(ns / 1e9, tz=UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def spans_to_trace_json(spans: list[ReadableSpan]) -> dict[str, Any]:
@@ -149,16 +153,31 @@ def _median_baselines(traces: list[dict[str, Any]], min_samples: int = 20) -> di
             "medianDurationMs": statistics.median(d["dur"]) if d["dur"] else None,
             "medianCostUsd": statistics.median(d["cost"]) if d["cost"] else None,
             "samples": len(d["dur"]),
-            "medianMetrics": {k[2:]: statistics.median(v) for k, v in d.items() if k.startswith("m:")},
+            "medianMetrics": {
+                k[2:]: statistics.median(v) for k, v in d.items() if k.startswith("m:")
+            },
         }
     return {"projectId": "demo", "window": len(traces), "traces": len(traces), "stages": stages}
 
 
-def build_offline_dataset(size: int, seed: int, normal_ratio: float = 0.7, speed: float = 0.02) -> list[EvalCase]:
+def build_offline_dataset(
+    size: int, seed: int, normal_ratio: float = 0.7, speed: float = 0.02
+) -> list[EvalCase]:
     """进程内跑 demo 流水线生成数据集（不需要 server / collector / API key）。"""
     exporter = InMemorySpanExporter()
-    ao.init(service_name="eval-offline", project_id="demo", exporter=exporter, queue=None,
-            pricing={"models": {"mock/fast": {"input": 0.1, "output": 0.4}, "mock/strong": {"input": 2, "output": 8}, "mock/judge": {"input": 1, "output": 4}}})
+    ao.init(
+        service_name="eval-offline",
+        project_id="demo",
+        exporter=exporter,
+        queue=None,
+        pricing={
+            "models": {
+                "mock/fast": {"input": 0.1, "output": 0.4},
+                "mock/strong": {"input": 2, "output": 8},
+                "mock/judge": {"input": 1, "output": 4},
+            }
+        },
+    )
     original_backoff = llm.backoff_s
     llm.backoff_s = lambda *a, **k: 0.0  # 评测不等退避
     try:
@@ -186,12 +205,24 @@ def build_offline_dataset(size: int, seed: int, normal_ratio: float = 0.7, speed
     cases = []
     for trace, exp in traces:
         st = extract_state(trace, baselines)
-        cases.append(EvalCase(trace["summary"]["traceId"], "injected", exp["fault_type"] or "none", exp["expected_label"] or "normal",
-                              exp["expected_stage"], exp["expected_root_cause"], st.model_dump(exclude_none=True), trace))
+        cases.append(
+            EvalCase(
+                trace["summary"]["traceId"],
+                "injected",
+                exp["fault_type"] or "none",
+                exp["expected_label"] or "normal",
+                exp["expected_stage"],
+                exp["expected_root_cause"],
+                st.model_dump(exclude_none=True),
+                trace,
+            )
+        )
     return cases
 
 
-def fetch_from_server(client: Any, project_id: str, from_iso: str, to_iso: str, max_pages: int = 50) -> list[EvalCase]:
+def fetch_from_server(
+    client: Any, project_id: str, from_iso: str, to_iso: str, max_pages: int = 50
+) -> list[EvalCase]:
     """从 server 拉带标准答案的 trace，生成 eval_cases（source=injected）。"""
     baselines = client.get_baselines(project_id)
     cases: list[EvalCase] = []
@@ -207,8 +238,18 @@ def fetch_from_server(client: Any, project_id: str, from_iso: str, to_iso: str, 
             if not exp:
                 continue
             st = extract_state(trace, baselines)
-            cases.append(EvalCase(trace["summary"]["traceId"], "injected", exp["fault_type"] or "none", exp["expected_label"] or "normal",
-                                  exp["expected_stage"], exp["expected_root_cause"], st.model_dump(exclude_none=True), trace))
+            cases.append(
+                EvalCase(
+                    trace["summary"]["traceId"],
+                    "injected",
+                    exp["fault_type"] or "none",
+                    exp["expected_label"] or "normal",
+                    exp["expected_stage"],
+                    exp["expected_root_cause"],
+                    st.model_dump(exclude_none=True),
+                    trace,
+                )
+            )
         if (page + 1) * 100 >= res["total"]:
             break
     return cases

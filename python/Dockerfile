@@ -1,5 +1,5 @@
 # 两个 target：triage（分诊 worker）和 demo（合成流水线）
-FROM ghcr.io/astral-sh/uv:0.5.26-python3.12-bookworm-slim AS base
+FROM ghcr.io/astral-sh/uv:0.13.8-python3.12-bookworm-slim AS base
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY pyproject.toml uv.lock* README.md ./

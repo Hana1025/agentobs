@@ -1,12 +1,12 @@
 """agentobs SDK：三个上下文管理器加一个模型调用封装。
 
-    import agentobs as ao
-    ao.init(service_name=..., project_id=..., otlp_endpoint=...)
-    with ao.job("job-1") as job:
-        with ao.stage("extract") as st:
-            r = ao.llm_call(lambda t: client.chat.completions.create(..., timeout=t),
-                            provider="openrouter", model="vendor/model-x")
-            st.set_metric("pages", 3)
+import agentobs as ao
+ao.init(service_name=..., project_id=..., otlp_endpoint=...)
+with ao.job("job-1") as job:
+    with ao.stage("extract") as st:
+        r = ao.llm_call(lambda t: client.chat.completions.create(..., timeout=t),
+                        provider="openrouter", model="vendor/model-x")
+        st.set_metric("pages", 3)
 """
 
 from agentobs.core import attrs, parsers

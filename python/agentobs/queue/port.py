@@ -39,9 +39,7 @@ class InMemoryQueue:
 
     def send(self, queue: str, msg: dict[str, Any], conn: Any | None = None) -> int:
         self._seq += 1
-        self.queues.setdefault(queue, []).append(
-            Message(self._seq, 0, datetime.now(), dict(msg))
-        )
+        self.queues.setdefault(queue, []).append(Message(self._seq, 0, datetime.now(), dict(msg)))
         return self._seq
 
     def read(self, queue: str, vt_s: int, qty: int) -> list[Message]:

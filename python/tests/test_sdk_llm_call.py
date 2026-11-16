@@ -36,7 +36,9 @@ def no_sleep(monkeypatch):
 
 def test_success_fills_attributes_and_cost(sdk):
     with ao.job("j"), ao.stage("extract"):
-        r = ao.llm_call(lambda t: _ok(), provider="mock", model="mock/fast", parse=ao.parsers.json_object)
+        r = ao.llm_call(
+            lambda t: _ok(), provider="mock", model="mock/fast", parse=ao.parsers.json_object
+        )
     assert r.output == {"a": 1}
     assert r.attempts == 1
     chat = next(s for s in finished_spans(sdk) if s.name == "chat mock/fast")
@@ -110,9 +112,17 @@ def test_deadline_bounds_total_time(sdk, monkeypatch):
 
     t0 = time.monotonic()
     with ao.job("j"), ao.stage("s"), pytest.raises(ao.LLMCallError) as ei:
-        ao.llm_call(call, provider="mock", model="mock/fast", attempt_timeout_s=0.2, deadline_s=0.5, max_attempts=10)
+        ao.llm_call(
+            call,
+            provider="mock",
+            model="mock/fast",
+            attempt_timeout_s=0.2,
+            deadline_s=0.6,
+            max_attempts=10,
+        )
     elapsed = time.monotonic() - t0
-    assert elapsed < 0.5 + 1.0
+    assert elapsed < 0.6 + 1.0
+    assert len(timeouts) == 3  # 0.2 + 0.05 + 0.2 + 0.05 → 第三次只剩约 0.1s
     assert ei.value.reason == attrs.REASON_TIMEOUT
     assert all(t <= 0.2 + 1e-6 for t in timeouts)
     assert timeouts[-1] < 0.2  # 最后一次用的是剩余 deadline

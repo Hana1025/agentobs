@@ -26,7 +26,7 @@ class PipelineConfig:
     strong_model: str = "mock/strong"
     judge_model: str = "mock/judge"
     attempt_timeout_s: float = 1.5
-    deadline_s: float = 6.0
+    deadline_s: float = 12.0  # 要容得下 2 次超时 + 退避（2s、4s）+ 1 次成功
     max_attempts: int = 3
     speed: float = 1.0  # mock 延迟倍率
     live_client: Any = None  # openai 兼容客户端（max_retries=0）；None = mock
@@ -38,7 +38,15 @@ class Pipeline:
 
     # ---------- 模型调用 ----------
 
-    def _call(self, rng: random.Random, plan: FaultPlan, stage: str, model: str, payload: dict, base_latency: float):
+    def _call(
+        self,
+        rng: random.Random,
+        plan: FaultPlan,
+        stage: str,
+        model: str,
+        payload: dict,
+        base_latency: float,
+    ):
         cfg = self.cfg
         if cfg.live_client is not None:
             client = cfg.live_client
@@ -47,7 +55,10 @@ class Pipeline:
                 lambda t: client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "Return the JSON object given in the user message unchanged."},
+                        {
+                            "role": "system",
+                            "content": "Return the JSON object given in the user message unchanged.",
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
@@ -91,7 +102,9 @@ class Pipeline:
             st.set_metric("scratch_pages_detected", doc.n_pages - len(out["answer_pages"]))
             return out
 
-    def structure(self, doc: Document, extracted: dict, plan: FaultPlan, rng: random.Random) -> dict[str, Any]:
+    def structure(
+        self, doc: Document, extracted: dict, plan: FaultPlan, rng: random.Random
+    ) -> dict[str, Any]:
         with ao.stage("structure") as st:
             mapped = list(extracted["answer_pages"])
             if plan.drop_pages:
@@ -104,18 +117,23 @@ class Pipeline:
             st.set_metric("items", len(out["items"]))
             return out
 
-    def score(self, doc: Document, structured: dict, plan: FaultPlan, rng: random.Random) -> dict[str, Any]:
+    def score(
+        self, doc: Document, structured: dict, plan: FaultPlan, rng: random.Random
+    ) -> dict[str, Any]:
         with ao.stage("score") as st:
             # 真实得分受错误输入影响：少页 / 草稿页 → 偏低
             n_expected = max(1, len(doc.answer_pages))
             n_mapped = len(structured["pages_mapped"])
             base = doc.true_score * min(1.0, n_mapped / n_expected)
+            extra_disagreement = plan.disagreement
             if plan.swap_scratch_for_answer:
+                # 草稿页混进答题页：分数偏低，且两个打分模型分歧略增（仍低于 disagreement 阈值）
                 base *= 0.8
+                extra_disagreement += rng.uniform(8, 14)
             base += plan.score_shift
             base = max(0.0, min(100.0, base))
             s1 = round(max(0.0, min(100.0, base + rng.gauss(0, 2))), 1)
-            s2 = round(max(0.0, min(100.0, base + rng.gauss(0, 2) + plan.disagreement)), 1)
+            s2 = round(max(0.0, min(100.0, base + rng.gauss(0, 2) + extra_disagreement)), 1)
             r1 = self._call(rng, plan, "score", self.cfg.strong_model, {"score": s1}, 0.25)
             r2 = self._call(rng, plan, "score", self.cfg.judge_model, {"score": s2}, 0.25)
             a, b = float(r1.output["score"]), float(r2.output["score"])
@@ -131,7 +149,9 @@ class Pipeline:
 
     def run_job(self, job_id: str, doc: Document, plan: FaultPlan, seed: int) -> dict[str, Any]:
         rng = random.Random(seed)
-        with ao.job(job_id, attributes={"pages": doc.n_pages, "answer_pages": len(doc.answer_pages)}) as job:
+        with ao.job(
+            job_id, attributes={"pages": doc.n_pages, "answer_pages": len(doc.answer_pages)}
+        ) as job:
             # 标准答案只在 demo 写到根 span，供 make eval 使用
             exp = plan.expected
             job.set_attribute(attrs.EVAL_PREFIX + "fault_type", plan.fault_type)

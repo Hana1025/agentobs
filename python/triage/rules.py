@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from triage.config import DeclarativeRule, Operand, Thresholds, TriageConfig
 from triage.models import TraceState
 
-BUILTIN = ["job_failed", "retries_high", "parse_failure", "control_chars_present", "slow_stage", "cost_spike"]
+BUILTIN = [
+    "job_failed",
+    "retries_high",
+    "parse_failure",
+    "control_chars_present",
+    "slow_stage",
+    "cost_spike",
+]
 
 _OPS = {
     "<": operator.lt,
@@ -35,15 +42,40 @@ def builtin_rules(state: TraceState, t: Thresholds) -> list[Fired]:
     for name, st in state.stages.items():
         total_retries = sum(st.retries.values())
         if total_retries >= t.retries_high_min:
-            out.append(Fired("retries_high", hard=False, stage=name, detail=f"{total_retries} retries"))
+            out.append(
+                Fired("retries_high", hard=False, stage=name, detail=f"{total_retries} retries")
+            )
         if st.parse_failures > 0:
-            out.append(Fired("parse_failure", hard=False, stage=name, detail=f"{st.parse_failures} parse failures"))
+            out.append(
+                Fired(
+                    "parse_failure",
+                    hard=False,
+                    stage=name,
+                    detail=f"{st.parse_failures} parse failures",
+                )
+            )
         if st.control_chars > 0:
-            out.append(Fired("control_chars_present", hard=False, stage=name, detail=f"{st.control_chars} control chars"))
+            out.append(
+                Fired(
+                    "control_chars_present",
+                    hard=False,
+                    stage=name,
+                    detail=f"{st.control_chars} control chars",
+                )
+            )
         if st.duration_ratio is not None and st.duration_ratio > t.slow_stage_ratio:
-            out.append(Fired("slow_stage", hard=False, stage=name, detail=f"duration_ratio={st.duration_ratio}"))
+            out.append(
+                Fired(
+                    "slow_stage",
+                    hard=False,
+                    stage=name,
+                    detail=f"duration_ratio={st.duration_ratio}",
+                )
+            )
         if st.cost_ratio is not None and st.cost_ratio > t.cost_spike_ratio:
-            out.append(Fired("cost_spike", hard=False, stage=name, detail=f"cost_ratio={st.cost_ratio}"))
+            out.append(
+                Fired("cost_spike", hard=False, stage=name, detail=f"cost_ratio={st.cost_ratio}")
+            )
     return out
 
 
@@ -66,7 +98,9 @@ def declarative_rules(state: TraceState, rules: list[DeclarativeRule]) -> list[F
         if left is None or right is None:
             continue  # 缺 metric 不触发
         if _OPS[r.op](left, right):
-            out.append(Fired(r.id, hard=r.hard, stage=r.left.stage, detail=f"{left} {r.op} {right}"))
+            out.append(
+                Fired(r.id, hard=r.hard, stage=r.left.stage, detail=f"{left} {r.op} {right}")
+            )
     return out
 
 

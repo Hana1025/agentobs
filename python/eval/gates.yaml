@@ -1,7 +1,11 @@
 # CI 回归门槛（占位，评测后再调）。任一后端不达标则 CI 失败。
-fault_recall_min: 0.90          # 非 normal 样本被判为 suspicious 或 failed 的比例
-normal_false_positive_max: 0.10 # normal 样本被判为非 normal 的比例
-backends: [rules, llm_json]     # 只跑确定性后端（llm_json 用 mock）
+# rules 后端按设计抓不到 scratch_as_answer / score_outlier（占注入故障的 2/8），所以门槛更低；
+# llm_json（CI 里是确定性 mock）要求覆盖全部类型。
+normal_false_positive_max: 0.10   # normal 样本（含 transient_rate_limit）被判为非 normal 的比例
+fault_recall_min:
+  rules: 0.60
+  llm_json: 0.90
+backends: [rules, llm_json]
 dataset:
   size: 300
   seed: 42

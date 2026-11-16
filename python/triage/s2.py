@@ -75,10 +75,23 @@ def validate(raw: dict[str, Any], span_ids: set[str], model: str, cost: float) -
         if sid not in span_ids:
             dropped += 1
             continue
-        evidence.append(Evidence(span_id=sid, attribute=str(e.get("attribute") or ""), note=str(e.get("note") or "")[:300]))
+        evidence.append(
+            Evidence(
+                span_id=sid,
+                attribute=str(e.get("attribute") or ""),
+                note=str(e.get("note") or "")[:300],
+            )
+        )
     if dropped:
         conf = min(conf, 0.49)
-    return S2Result(root_cause=rc, confidence=conf, evidence=evidence, summary=str(raw.get("summary") or "")[:500], model=model, cost_usd=cost)
+    return S2Result(
+        root_cause=rc,
+        confidence=conf,
+        evidence=evidence,
+        summary=str(raw.get("summary") or "")[:500],
+        model=model,
+        cost_usd=cost,
+    )
 
 
 class SystemTwo:
@@ -88,10 +101,15 @@ class SystemTwo:
         self.timeout_s = timeout_s
 
     def _ask(self, state: TraceState, spans: list[dict[str, Any]]) -> tuple[str, float]:
-        user = json.dumps({"state": state.model_dump(exclude_none=True), "spans": spans}, ensure_ascii=False)
+        user = json.dumps(
+            {"state": state.model_dump(exclude_none=True), "spans": spans}, ensure_ascii=False
+        )
         resp = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
             response_format={"type": "json_object"},
             temperature=0,
             timeout=self.timeout_s,
@@ -101,7 +119,9 @@ class SystemTwo:
         cost = float(getattr(usage, "cost", 0.0) or 0.0) if usage is not None else 0.0
         return text, cost
 
-    def analyze(self, state: TraceState, spans: list[dict[str, Any]], include_content: bool = False) -> S2Result:
+    def analyze(
+        self, state: TraceState, spans: list[dict[str, Any]], include_content: bool = False
+    ) -> S2Result:
         stripped = strip_spans(spans, include_content)
         span_ids = {s.get("spanId") for s in spans}
         total_cost = 0.0
@@ -115,7 +135,13 @@ class SystemTwo:
             except ParseError as e:
                 last_err = e
                 log.warning("system 2 returned invalid JSON, retrying once: %s", e)
-        return S2Result(root_cause="other", confidence=0.0, summary=f"unparseable response: {last_err}", model=self.model, cost_usd=total_cost)
+        return S2Result(
+            root_cause="other",
+            confidence=0.0,
+            summary=f"unparseable response: {last_err}",
+            model=self.model,
+            cost_usd=total_cost,
+        )
 
 
 class MockSystemTwo:
@@ -123,7 +149,9 @@ class MockSystemTwo:
 
     model = "mock/s2"
 
-    def analyze(self, state: TraceState, spans: list[dict[str, Any]], include_content: bool = False) -> S2Result:
+    def analyze(
+        self, state: TraceState, spans: list[dict[str, Any]], include_content: bool = False
+    ) -> S2Result:
         time.sleep(0.01)
         by_stage: dict[str, list[dict[str, Any]]] = {}
         for s in spans:
@@ -135,36 +163,150 @@ class MockSystemTwo:
             cands = by_stage.get(stage, [])
             if pred:
                 cands = [c for c in cands if pred(c)]
-            return [{"span_id": c.get("spanId"), "attribute": attr, "note": note} for c in cands[:2]]
+            return [
+                {"span_id": c.get("spanId"), "attribute": attr, "note": note} for c in cands[:2]
+            ]
 
         raw: dict[str, Any]
         failed_stage = next((n for n, st in state.stages.items() if st.status == "ERROR"), None)
         if state.job.status == "ERROR" and failed_stage:
             st = state.stages[failed_stage]
             if "timeout" in st.retries:
-                raw = {"root_cause": "timeout_cascade", "confidence": 0.85, "evidence": ev(failed_stage, attrs.RETRY_REASON, "attempts timed out", lambda c: c.get("statusCode") == "ERROR"), "summary": f"{failed_stage} exhausted retries on timeouts"}
+                raw = {
+                    "root_cause": "timeout_cascade",
+                    "confidence": 0.85,
+                    "evidence": ev(
+                        failed_stage,
+                        attrs.RETRY_REASON,
+                        "attempts timed out",
+                        lambda c: c.get("statusCode") == "ERROR",
+                    ),
+                    "summary": f"{failed_stage} exhausted retries on timeouts",
+                }
             else:
-                raw = {"root_cause": "provider_failure", "confidence": 0.9, "evidence": ev(failed_stage, attrs.RETRY_REASON, "provider returned errors on every attempt", lambda c: c.get("statusCode") == "ERROR"), "summary": f"provider failed in {failed_stage}"}
+                raw = {
+                    "root_cause": "provider_failure",
+                    "confidence": 0.9,
+                    "evidence": ev(
+                        failed_stage,
+                        attrs.RETRY_REASON,
+                        "provider returned errors on every attempt",
+                        lambda c: c.get("statusCode") == "ERROR",
+                    ),
+                    "summary": f"provider failed in {failed_stage}",
+                }
         else:
-            slow = next((n for n, st in state.stages.items() if st.duration_ratio and st.duration_ratio > 3 and sum(st.retries.values()) >= 1), None)
-            corrupt = next((n for n, st in state.stages.items() if st.parse_failures or st.control_chars), None)
+            slow = next(
+                (
+                    n
+                    for n, st in state.stages.items()
+                    if st.duration_ratio and st.duration_ratio > 3 and sum(st.retries.values()) >= 1
+                ),
+                None,
+            )
+            corrupt = next(
+                (n for n, st in state.stages.items() if st.parse_failures or st.control_chars), None
+            )
             structure = state.stages.get("structure")
             expected = state.job.metrics.get("answer_pages")
             score_st = state.stages.get("score")
             if slow:
-                raw = {"root_cause": "timeout_cascade", "confidence": 0.8, "evidence": ev(slow, attrs.RETRY_REASON, "repeated timeouts inflated stage duration", lambda c: c.get("attributes", {}).get(attrs.RETRY_REASON)), "summary": f"{slow} slowed by timeout retries"}
+                raw = {
+                    "root_cause": "timeout_cascade",
+                    "confidence": 0.8,
+                    "evidence": ev(
+                        slow,
+                        attrs.RETRY_REASON,
+                        "repeated timeouts inflated stage duration",
+                        lambda c: c.get("attributes", {}).get(attrs.RETRY_REASON),
+                    ),
+                    "summary": f"{slow} slowed by timeout retries",
+                }
             elif corrupt:
-                raw = {"root_cause": "output_corruption", "confidence": 0.85, "evidence": ev(corrupt, attrs.OUTPUT_CONTROL_CHARS, "control characters / parse failure in model output", lambda c: c.get("name", "").startswith("chat")), "summary": f"model output in {corrupt} was corrupted"}
-            elif structure and expected and structure.metrics.get("pages_mapped", expected) < expected:
-                raw = {"root_cause": "missing_or_misclassified_input", "confidence": 0.82, "evidence": ev("structure", attrs.METRIC_PREFIX + "pages_mapped", "fewer pages mapped than answer pages", lambda c: c.get("name", "").startswith("stage")), "summary": "structure mapped fewer pages than the input had"}
+                raw = {
+                    "root_cause": "output_corruption",
+                    "confidence": 0.85,
+                    "evidence": ev(
+                        corrupt,
+                        attrs.OUTPUT_CONTROL_CHARS,
+                        "control characters / parse failure in model output",
+                        lambda c: c.get("name", "").startswith("chat"),
+                    ),
+                    "summary": f"model output in {corrupt} was corrupted",
+                }
+            elif (
+                structure
+                and expected
+                and structure.metrics.get("pages_mapped", expected) < expected
+            ):
+                raw = {
+                    "root_cause": "missing_or_misclassified_input",
+                    "confidence": 0.82,
+                    "evidence": ev(
+                        "structure",
+                        attrs.METRIC_PREFIX + "pages_mapped",
+                        "fewer pages mapped than answer pages",
+                        lambda c: c.get("name", "").startswith("stage"),
+                    ),
+                    "summary": "structure mapped fewer pages than the input had",
+                }
             elif score_st and score_st.metrics.get("disagreement_flag", 0) >= 1:
-                raw = {"root_cause": "model_disagreement", "confidence": 0.8, "evidence": ev("score", attrs.METRIC_PREFIX + "disagreement", "scoring models disagree", lambda c: c.get("name", "").startswith("stage")), "summary": "the two scoring models disagree"}
-            elif score_st and score_st.baseline_metrics.get("score") and score_st.metrics.get("score", 1e9) < score_st.baseline_metrics["score"] * 0.6:
-                raw = {"root_cause": "scoring_anomaly", "confidence": 0.75, "evidence": ev("score", attrs.METRIC_PREFIX + "score", "score far below project median", lambda c: c.get("name", "").startswith("stage")), "summary": "score is an outlier with no other symptoms"}
-            elif score_st and score_st.baseline_metrics.get("score") and score_st.metrics.get("score", 1e9) < score_st.baseline_metrics["score"] * 0.85:
-                raw = {"root_cause": "missing_or_misclassified_input", "confidence": 0.6, "evidence": ev("extract", attrs.METRIC_PREFIX + "answer_pages_detected", "page count matches but score depressed; likely wrong pages picked", lambda c: c.get("name", "").startswith("stage")), "summary": "extract likely misclassified a page"}
+                raw = {
+                    "root_cause": "model_disagreement",
+                    "confidence": 0.8,
+                    "evidence": ev(
+                        "score",
+                        attrs.METRIC_PREFIX + "disagreement",
+                        "scoring models disagree",
+                        lambda c: c.get("name", "").startswith("stage"),
+                    ),
+                    "summary": "the two scoring models disagree",
+                }
+            elif (
+                score_st
+                and score_st.baseline_metrics.get("score")
+                and score_st.metrics.get("score", 1e9) < score_st.baseline_metrics["score"] * 0.6
+            ):
+                raw = {
+                    "root_cause": "scoring_anomaly",
+                    "confidence": 0.75,
+                    "evidence": ev(
+                        "score",
+                        attrs.METRIC_PREFIX + "score",
+                        "score far below project median",
+                        lambda c: c.get("name", "").startswith("stage"),
+                    ),
+                    "summary": "score is an outlier with no other symptoms",
+                }
+            elif (
+                score_st
+                and score_st.baseline_metrics.get("score")
+                and score_st.metrics.get("score", 1e9) < score_st.baseline_metrics["score"] * 0.85
+            ):
+                raw = {
+                    "root_cause": "missing_or_misclassified_input",
+                    "confidence": 0.6,
+                    "evidence": ev(
+                        "extract",
+                        attrs.METRIC_PREFIX + "answer_pages_detected",
+                        "page count matches but score depressed; likely wrong pages picked",
+                        lambda c: c.get("name", "").startswith("stage"),
+                    ),
+                    "summary": "extract likely misclassified a page",
+                }
             else:
-                raw = {"root_cause": "other", "confidence": 0.3, "evidence": [{"span_id": root.get("spanId") if root else "", "attribute": attrs.JOB_ID, "note": "no clear symptom"}], "summary": "no clear root cause"}
+                raw = {
+                    "root_cause": "other",
+                    "confidence": 0.3,
+                    "evidence": [
+                        {
+                            "span_id": root.get("spanId") if root else "",
+                            "attribute": attrs.JOB_ID,
+                            "note": "no clear symptom",
+                        }
+                    ],
+                    "summary": "no clear root cause",
+                }
         return validate(raw, {s.get("spanId") for s in spans}, self.model, 0.0)
 
 

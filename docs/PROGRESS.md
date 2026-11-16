@@ -4,9 +4,9 @@
 
 ## 通用说明
 
-- 本机没有 gradle / uv / docker，代码按规格写出但**尚未运行测试**（用户要求先不测试）。
-- `server/gradlew` 包装脚本和 `gradle-wrapper.jar` 未提交：需要有 gradle 的机器执行一次 `gradle wrapper --gradle-version 8.12.1` 生成；Dockerfile 和 CI 直接用 gradle 镜像/action，不依赖 wrapper。
-- `python/uv.lock`、`web/package-lock.json` 未生成：首次 `uv sync` / `npm install` 后提交锁文件。
+- 本机没有 Docker，所以**需要 Testcontainers 的 Java IT 和 Python pgmq 集成测试没有跑过**，只在 CI 里跑。其余测试本机全绿（见“验证记录”）。
+- `server/gradlew` + `gradle-wrapper.jar`（8.12.1）、`python/uv.lock`、`web/package-lock.json` 已生成并提交。
+- 本机 Python 是 3.13（规格要求 3.12）；`requires-python >= 3.12`，锁文件跨版本。
 - Python 侧没有用 uv workspace，而是 `python/` 一个项目，`agentobs`、`triage`、`demo`、`eval` 为顶层包，只有 `agentobs` 进 wheel（hatch `packages`）。原因：workspace 会让 SDK 包目录多一层，与规格目录树不一致，单项目更简单且可随时拆。
 
 ## M1 骨架与部署底座（代码完成，未验证）
@@ -67,3 +67,20 @@
 2. 启动 server 后 `npm run gen:api` 覆盖 `web/src/api/schema.ts`。
 3. `make demo` 后用 `docker stats` 实测内存，记录到这里（SPEC 第 12 节）。
 4. 跑一次 `make eval`，按结果定 6.4 路由阈值和 10.4 门槛。
+
+## 验证记录（2026-11-17，本机 Windows，无 Docker）
+
+- Python：`ruff check` / `ruff format --check` 通过；pytest 55 passed（pgmq 集成测试因无 Docker 跳过）；`python -m eval.run --backend rules --backend llm_json --offline --gate`（300 样本）通过：rules 故障召回 ~63%（抓不到 scratch_as_answer / score_outlier 属预期），llm_json mock 召回 94.7%、正常误报 4.9%、S2 根因准确率 100%。
+- web：vitest 15 passed；`tsc -b --noEmit`、eslint、`vite build` 通过。
+- Java：`gradle compileJava compileTestJava` 通过（用本机缓存的 Gradle 9.8.1，Spring Boot 3.4.2 插件在 Gradle 9 下可用）；`gradle test -PskipIT` 通过（OtlpSpanMapperTest）；5 个 *IT 测试未运行。
+
+### 跑测试时修掉的问题
+
+- demo 注入器：`transient_rate_limit` 在 score 阶段对两个模型各注入一次 429，导致 retries_high 误报；改为每个 job 只注入一次（`FaultPlan.consumed`）。
+- demo 注入器：`timeout_cascade` 原来所有尝试都超时 → job 直接失败，与标准答案（suspicious，不是 failed）不符；改为前 2 次超时、第 3 次成功，demo 的 `deadline_s` 提到 12s 以容纳退避。
+- `scratch_as_answer` 在合成数据里除了分数偏低没有任何可见信号，任何 S1 都抓不到；给它加了一个弱信号：两个打分模型分歧略增（8–14，低于 disagreement_flag 阈值 15）。mock S1 用“分歧偏高 + 分数偏低”组合抓它，离线召回 50%。
+- mock S1 的 health softmax 给 normal 基础权重 1.2（原 1.0 会与单条弱证据打平）。
+- 回归门改为按后端设阈值：rules 0.60、llm_json 0.90（rules 按设计覆盖不到 2/8 的故障类型）。
+- web：openapi-fetch 在 jsdom 里相对 URL 建 Request 会抛错，`baseUrl` 改为 `window.location.origin`；`fetch` 改为调用时解析，便于测试 spy。
+- web：`@tailwindcss/vite` 4.0.3 在 vite build 时抛 "Cannot convert undefined or null to object"，升级到 4.1.11。
+- Python：`uv.lock` 由 uv 0.13.8 生成，Dockerfile 和 CI 的 uv 版本同步到 0.13.8（0.5.x 读不了新锁文件格式）。

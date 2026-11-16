@@ -20,7 +20,9 @@ def make_decider(cfg: TriageConfig, *, offline: bool = False) -> Decider:
             return MockLLMJsonDecider()
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=os.environ.get("LLM_BASE_URL") or None, max_retries=0)
+        client = OpenAI(
+            api_key=api_key, base_url=os.environ.get("LLM_BASE_URL") or None, max_retries=0
+        )
         return LLMJsonDecider(client, model=os.environ.get("S1_MODEL") or "")
     if cfg.backend == "systemone_http":
         from triage.backends.systemone_http import SystemOneHttpDecider

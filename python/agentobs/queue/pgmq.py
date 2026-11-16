@@ -40,7 +40,9 @@ class PgmqQueue:
         with self._connect() as c, c.cursor(row_factory=tuple_row) as cur:
             cur.execute(_READ, (queue, vt_s, qty))
             return [
-                Message(int(r[0]), int(r[1]), r[2], r[3] if isinstance(r[3], dict) else json.loads(r[3]))
+                Message(
+                    int(r[0]), int(r[1]), r[2], r[3] if isinstance(r[3], dict) else json.loads(r[3])
+                )
                 for r in cur.fetchall()
             ]
 

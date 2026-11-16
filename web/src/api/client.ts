@@ -1,7 +1,12 @@
 import createClient from "openapi-fetch";
 import type { paths } from "./schema";
 
-export const api = createClient<paths>({ baseUrl: "" });
+// 绝对 baseUrl：浏览器里就是当前 origin；jsdom 测试里 Request 不接受相对 URL
+export const api = createClient<paths>({
+  baseUrl: typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://localhost",
+  // 调用时才解析 globalThis.fetch，便于测试里 spy
+  fetch: (req) => globalThis.fetch(req),
+});
 
 export class ApiError extends Error {
   status: number;

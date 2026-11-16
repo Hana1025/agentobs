@@ -71,7 +71,9 @@ class TriageWorker:
     def triage_trace(self, trace: dict[str, Any]) -> TriageResult:
         """对已拉到的 trace JSON 做完整分诊（不含 I/O 之外的副作用；S2 调用除外）。"""
         project_id = trace["summary"].get("projectId") or "default"
-        state = extract_state(trace, self.baselines(project_id), self.cfg.thresholds.baseline_min_samples)
+        state = extract_state(
+            trace, self.baselines(project_id), self.cfg.thresholds.baseline_min_samples
+        )
         fired = evaluate(state, self.cfg)
         state.rules_fired = [f.id for f in fired]
 
@@ -105,20 +107,30 @@ class TriageWorker:
 
         if r == "escalate":
             if self.s2 is None or not self.cfg.s2.enabled:
-                result.review_status = "pending" if needs_review(None, severity, self.cfg.review) else "none"
+                result.review_status = (
+                    "pending" if needs_review(None, severity, self.cfg.review) else "none"
+                )
             elif not self.budget.try_acquire():
                 log.info("s2 budget exhausted; downgrading %s to alert", state.trace_id)
                 result.route = "alert"
             else:
                 self._run_s2(result, state, trace, severity)
-        if result.route == "alert" and result.review_status == "none" and severity >= self.cfg.review.or_severity_gte:
+        if (
+            result.route == "alert"
+            and result.review_status == "none"
+            and severity >= self.cfg.review.or_severity_gte
+        ):
             result.review_status = "pending"
 
-        m.triage_total.labels(route=result.route, s1_label=result.s1_label, backend=self.decider.name).inc()
+        m.triage_total.labels(
+            route=result.route, s1_label=result.s1_label, backend=self.decider.name
+        ).inc()
         m.triage_confidence.observe(result.s1_confidence)
         return result
 
-    def _run_s2(self, result: TriageResult, state: TraceState, trace: dict[str, Any], severity: int) -> None:
+    def _run_s2(
+        self, result: TriageResult, state: TraceState, trace: dict[str, Any], severity: int
+    ) -> None:
         t0 = time.monotonic()
         s2_failed = False
         try:
@@ -163,7 +175,11 @@ class TriageWorker:
             log.error("triage failed for %s", trace_id, exc_info=True)
             return self._defer(msg, "triage_error")
         if status == "exists":
-            log.info("triage for %s@%s already exists; archiving duplicate delivery", trace_id, self.version)
+            log.info(
+                "triage for %s@%s already exists; archiving duplicate delivery",
+                trace_id,
+                self.version,
+            )
         self.queue.archive(self.cfg.worker.queue, msg.msg_id)
         return Outcome.ARCHIVE
 
@@ -214,12 +230,18 @@ class TriageWorker:
 
 
 def main() -> int:
-    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     cfg = TriageConfig.load()
     from agentobs.queue.pgmq import PgmqQueue
 
     queue = PgmqQueue(os.environ["AGENTOBS_QUEUE_DSN"])
-    server = ServerClient(os.environ.get("AGENTOBS_SERVER_URL", "http://localhost:8080"), os.environ.get("AGENTOBS_INTERNAL_TOKEN", ""))
+    server = ServerClient(
+        os.environ.get("AGENTOBS_SERVER_URL", "http://localhost:8080"),
+        os.environ.get("AGENTOBS_INTERNAL_TOKEN", ""),
+    )
     decider = make_decider(cfg)
     s2 = None
     if cfg.s2.enabled:

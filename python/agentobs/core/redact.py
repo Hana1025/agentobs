@@ -26,7 +26,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
 class DefaultRedactor:
     """保守的正则脱敏：邮箱、密钥样式、长 hex、长数字串、IP。可整体替换。"""
 
-    def __init__(self, max_chars: int = CONTENT_MAX_CHARS, extra: list[tuple[str, str]] | None = None):
+    def __init__(
+        self, max_chars: int = CONTENT_MAX_CHARS, extra: list[tuple[str, str]] | None = None
+    ):
         self.max_chars = max_chars
         self.patterns = list(_PATTERNS)
         for pat, repl in extra or []:

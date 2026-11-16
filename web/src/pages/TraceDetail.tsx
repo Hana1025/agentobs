@@ -11,7 +11,7 @@ export default function TraceDetail() {
   const q = useTrace(traceId);
   const [selected, setSelected] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const spans = q.data?.spans ?? [];
+  const spans = useMemo(() => q.data?.spans ?? [], [q.data]);
   const selectedSpan = useMemo(() => spans.find((s) => s.spanId === selected), [spans, selected]);
 
   if (q.isLoading) return <div className="muted">加载中…</div>;

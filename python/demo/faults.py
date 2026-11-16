@@ -8,9 +8,17 @@ from dataclasses import dataclass, field
 FAULT_TYPES: dict[str, dict[str, str | None]] = {
     "none": {"label": "normal", "stage": "none", "root_cause": None},
     "transient_rate_limit": {"label": "normal", "stage": "none", "root_cause": None},
-    "provider_failure": {"label": "failed", "stage": "infrastructure", "root_cause": "provider_failure"},
+    "provider_failure": {
+        "label": "failed",
+        "stage": "infrastructure",
+        "root_cause": "provider_failure",
+    },
     "timeout_cascade": {"label": "suspicious", "stage": None, "root_cause": "timeout_cascade"},
-    "output_corruption": {"label": "suspicious", "stage": "structure", "root_cause": "output_corruption"},
+    "output_corruption": {
+        "label": "suspicious",
+        "stage": "structure",
+        "root_cause": "output_corruption",
+    },
     "missing_page": {
         "label": "suspicious",
         "stage": "structure",
@@ -21,7 +29,11 @@ FAULT_TYPES: dict[str, dict[str, str | None]] = {
         "stage": "extract",
         "root_cause": "missing_or_misclassified_input",
     },
-    "model_disagreement": {"label": "suspicious", "stage": "score", "root_cause": "model_disagreement"},
+    "model_disagreement": {
+        "label": "suspicious",
+        "stage": "score",
+        "root_cause": "model_disagreement",
+    },
     "score_outlier": {"label": "suspicious", "stage": "score", "root_cause": "scoring_anomaly"},
 }
 
@@ -34,9 +46,13 @@ class FaultPlan:
     fault_type: str
     stage: str  # 注入的阶段；none 时为 "none"
     # mock 行为开关
-    rate_limit_first_attempt: bool = False
+    rate_limit_first_attempt: bool = False  # 整个 job 只注入一次 429（见 consumed）
     all_attempts_503: bool = False
-    timeout_all_attempts: bool = False
+    timeout_all_attempts: bool = (
+        False  # 前 timeout_attempts 次尝试超时，之后成功：job 不失败但耗时数倍
+    )
+    timeout_attempts: int = 2
+    consumed: bool = False
     corrupt_output: bool = False  # 第一次输出不可解析，后续带控制字符但可解析
     drop_pages: int = 0  # structure 少映射几页
     swap_scratch_for_answer: bool = False

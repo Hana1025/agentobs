@@ -5,10 +5,10 @@ from typing import Any
 import pytest
 
 from agentobs.queue.port import InMemoryQueue
+from tests.trace_fixtures import baselines, failed_trace, normal_trace
 from triage.backends.rules_backend import RulesDecider
 from triage.config import TriageConfig
 from triage.worker import Outcome, TriageWorker
-from tests.trace_fixtures import baselines, failed_trace, normal_trace
 
 
 class FakeServer:
@@ -34,7 +34,14 @@ class FakeServer:
 
 
 def _msg(trace_id: str) -> dict[str, Any]:
-    return {"v": 1, "project_id": "demo", "job_id": "job-1", "trace_id": trace_id, "status": "succeeded", "finished_at": "2026-11-17T01:00:00Z"}
+    return {
+        "v": 1,
+        "project_id": "demo",
+        "job_id": "job-1",
+        "trace_id": trace_id,
+        "status": "succeeded",
+        "finished_at": "2026-11-17T01:00:00Z",
+    }
 
 
 @pytest.fixture
@@ -67,7 +74,10 @@ def test_trace_not_ready_is_deferred_then_processed(setup):
     assert server.posted == []
     assert len(q.queues[cfg.worker.queue]) == 1
     # 根 span 未结束 / 不存在 → 仍然 defer
-    server.traces["a" * 32] = {"summary": {"traceId": "a" * 32, "hasRoot": False, "projectId": "demo"}, "spans": []}
+    server.traces["a" * 32] = {
+        "summary": {"traceId": "a" * 32, "hasRoot": False, "projectId": "demo"},
+        "spans": [],
+    }
     assert w.handle(q.read(cfg.worker.queue, 60, 1)[0]) == Outcome.DEFER
     server.traces["a" * 32] = normal_trace()
     assert w.handle(q.read(cfg.worker.queue, 60, 1)[0]) == Outcome.ARCHIVE
@@ -122,10 +132,12 @@ def test_s2_budget_downgrades_to_alert(setup):
         def analyze(self, state, spans, include_content=False):
             from triage.models import S2Result
 
-            return S2Result(root_cause="provider_failure", confidence=0.9, model="mock", summary="x")
+            return S2Result(
+                root_cause="provider_failure", confidence=0.9, model="mock", summary="x"
+            )
 
     w = TriageWorker(cfg, q, server, RulesDecider(cfg), s2=S2())
-    for i, tid in enumerate(["b" * 32, "d" * 32]):
+    for _i, tid in enumerate(["b" * 32, "d" * 32]):
         server.traces[tid] = failed_trace(tid)
         q.send(cfg.worker.queue, _msg(tid))
     w.run_once()

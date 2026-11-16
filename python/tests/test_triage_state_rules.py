@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 
+from tests.trace_fixtures import (
+    TraceBuilder,
+    baselines,
+    failed_trace,
+    missing_page_trace,
+    normal_trace,
+)
 from triage.config import TriageConfig
 from triage.models import Answer
 from triage.router import HourlyBudget, needs_review, route
 from triage.rules import Fired, evaluate
 from triage.state import estimate_tokens, extract_state
-from tests.trace_fixtures import TraceBuilder, baselines, failed_trace, missing_page_trace, normal_trace
 
 
 def test_extract_state_aggregates_stages_and_ratios():
@@ -32,7 +38,15 @@ def test_state_has_no_content_and_fits_in_2k_tokens():
     r = b.root(extra={"agentobs.content.input": "SECRET PROMPT TEXT"})
     e = b.stage("extract", r, 0, 1)
     for i in range(1, 4):
-        b.chat("extract", e, i * 0.2, 0.1, attempt=i, status="ERROR" if i < 3 else "OK", reason="timeout" if i < 3 else None)
+        b.chat(
+            "extract",
+            e,
+            i * 0.2,
+            0.1,
+            attempt=i,
+            status="ERROR" if i < 3 else "OK",
+            reason="timeout" if i < 3 else None,
+        )
     st = extract_state(b.build(), baselines())
     dumped = st.model_dump_json()
     assert "SECRET" not in dumped
@@ -61,18 +75,26 @@ def test_declarative_rule_compares_stage_and_job_metrics():
     st = extract_state(missing_page_trace(), None)
     fired = evaluate(st, cfg)
     assert "missing_input_pages" in {f.id for f in fired}
-    assert "missing_input_pages" not in {f.id for f in evaluate(extract_state(normal_trace(), None), cfg)}
+    assert "missing_input_pages" not in {
+        f.id for f in evaluate(extract_state(normal_trace(), None), cfg)
+    }
 
 
 def test_routing_thresholds():
     cfg = TriageConfig.load().routing
-    ok = {"health": Answer.from_probs("health", {"normal": 0.95, "suspicious": 0.04, "failed": 0.01})}
+    ok = {
+        "health": Answer.from_probs("health", {"normal": 0.95, "suspicious": 0.04, "failed": 0.01})
+    }
     assert route(ok, [], cfg) == "pass"
     assert route(ok, [Fired("retries_high", hard=False)], cfg) == "alert"
-    susp = {"health": Answer.from_probs("health", {"normal": 0.5, "suspicious": 0.45, "failed": 0.05})}
+    susp = {
+        "health": Answer.from_probs("health", {"normal": 0.5, "suspicious": 0.45, "failed": 0.05})
+    }
     assert route(susp, [], cfg) == "escalate"
     assert route(ok, [Fired("job_failed", hard=True)], cfg) == "escalate"
-    mid = {"health": Answer.from_probs("health", {"normal": 0.7, "suspicious": 0.25, "failed": 0.05})}
+    mid = {
+        "health": Answer.from_probs("health", {"normal": 0.7, "suspicious": 0.25, "failed": 0.05})
+    }
     assert route(mid, [], cfg) == "alert"
 
 

@@ -48,9 +48,13 @@ exclude = ["eval/reports"]
 select = ["E", "F", "I", "B", "UP", "N"]
 ignore = ["E501"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["agentobs", "triage", "demo", "eval", "tests"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: 需要 Docker（Testcontainers）的测试",
 ]

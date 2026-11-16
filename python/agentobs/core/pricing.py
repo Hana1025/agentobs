@@ -36,8 +36,12 @@ class PricingTable:
             log.warning("agentobs: failed to load pricing from %s", source, exc_info=True)
             return cls()
 
-    def cost(self, model: str | None, input_tokens: int | None, output_tokens: int | None) -> float | None:
+    def cost(
+        self, model: str | None, input_tokens: int | None, output_tokens: int | None
+    ) -> float | None:
         if not model or model not in self.prices:
             return None
         p = self.prices[model]
-        return round(((input_tokens or 0) * p.input + (output_tokens or 0) * p.output) / 1_000_000, 6)
+        return round(
+            ((input_tokens or 0) * p.input + (output_tokens or 0) * p.output) / 1_000_000, 6
+        )

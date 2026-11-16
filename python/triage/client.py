@@ -23,7 +23,9 @@ class ServerClient:
         return r.json()
 
     def get_baselines(self, project_id: str, window: int = 200) -> dict[str, Any]:
-        r = self._c.get("/api/internal/baselines", params={"project_id": project_id, "window": window})
+        r = self._c.get(
+            "/api/internal/baselines", params={"project_id": project_id, "window": window}
+        )
         r.raise_for_status()
         return r.json()
 
@@ -45,10 +47,19 @@ class ServerClient:
         r.raise_for_status()
         return r.json()
 
-    def list_traces(self, project_id: str, from_iso: str, to_iso: str, page: int = 0, size: int = 100) -> dict[str, Any]:
+    def list_traces(
+        self, project_id: str, from_iso: str, to_iso: str, page: int = 0, size: int = 100
+    ) -> dict[str, Any]:
         r = self._c.get(
             "/api/traces",
-            params={"project_id": project_id, "from": from_iso, "to": to_iso, "page": page, "size": size, "sort": "start_time"},
+            params={
+                "project_id": project_id,
+                "from": from_iso,
+                "to": to_iso,
+                "page": page,
+                "size": size,
+                "sort": "start_time",
+            },
         )
         r.raise_for_status()
         return r.json()

@@ -54,7 +54,10 @@ def test_missing_page_reports_fewer_pages_mapped(sdk):
     assert err is None
     root = next(s for s in spans if s.parent is None)
     structure = next(s for s in spans if s.name == "stage structure")
-    assert structure.attributes[attrs.METRIC_PREFIX + "pages_mapped"] < root.attributes[attrs.METRIC_PREFIX + "answer_pages"]
+    assert (
+        structure.attributes[attrs.METRIC_PREFIX + "pages_mapped"]
+        < root.attributes[attrs.METRIC_PREFIX + "answer_pages"]
+    )
 
 
 def test_every_fault_type_runs(sdk):

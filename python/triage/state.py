@@ -14,7 +14,11 @@ _RETRY_REASONS = set(attrs.RETRY_REASONS)
 def _metrics_of(span_attrs: dict[str, Any]) -> dict[str, float]:
     out: dict[str, float] = {}
     for k, v in span_attrs.items():
-        if k.startswith(attrs.METRIC_PREFIX) and isinstance(v, int | float) and not isinstance(v, bool):
+        if (
+            k.startswith(attrs.METRIC_PREFIX)
+            and isinstance(v, int | float)
+            and not isinstance(v, bool)
+        ):
             out[k[len(attrs.METRIC_PREFIX) :]] = float(v)
     return out
 
@@ -28,7 +32,9 @@ def _f(v: Any) -> float | None:
         return None
 
 
-def extract_state(trace: dict[str, Any], baselines: dict[str, Any] | None, min_samples: int = 20) -> TraceState:
+def extract_state(
+    trace: dict[str, Any], baselines: dict[str, Any] | None, min_samples: int = 20
+) -> TraceState:
     """``trace`` 是 GET /api/internal/traces/{id} 的 JSON；``baselines`` 是 GET /api/internal/baselines 的 JSON。"""
     summary = trace["summary"]
     spans: list[dict[str, Any]] = trace.get("spans", [])
@@ -97,7 +103,9 @@ def extract_state(trace: dict[str, Any], baselines: dict[str, Any] | None, min_s
             mc = _f(b.get("medianCostUsd"))
             if mc and mc > 0 and st.cost_usd is not None:
                 st.cost_ratio = round(st.cost_usd / mc, 3)
-            st.baseline_metrics = {k: float(v) for k, v in (b.get("medianMetrics") or {}).items() if v is not None}
+            st.baseline_metrics = {
+                k: float(v) for k, v in (b.get("medianMetrics") or {}).items() if v is not None
+            }
 
     return TraceState(
         trace_id=summary["traceId"],

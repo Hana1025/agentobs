@@ -47,7 +47,14 @@ class LLMJsonDecider:
     name = "llm_json"
     version = "1"
 
-    def __init__(self, client: Any, model: str, samples: int = 5, temperature: float = 0.7, timeout_s: float = 30):
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        samples: int = 5,
+        temperature: float = 0.7,
+        timeout_s: float = 30,
+    ):
         self.client = client
         self.model = model
         self.samples = samples
@@ -72,7 +79,10 @@ class LLMJsonDecider:
     def _create(self, prompt: str, **kw: Any) -> Any:
         resp = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
             max_tokens=1,
             timeout=self.timeout_s,
             **kw,
@@ -85,9 +95,13 @@ class LLMJsonDecider:
 
     def _with_logprobs(self, prompt: str, mapping: dict[str, str]) -> dict[str, float] | None:
         try:
-            resp = self._create(prompt, temperature=0, logprobs=True, top_logprobs=min(20, max(5, len(mapping))))
+            resp = self._create(
+                prompt, temperature=0, logprobs=True, top_logprobs=min(20, max(5, len(mapping)))
+            )
         except Exception as e:  # noqa: BLE001  供应商不支持 logprobs 时回退到采样
-            log.info("llm_json: logprobs unavailable (%s), falling back to sampling", type(e).__name__)
+            log.info(
+                "llm_json: logprobs unavailable (%s), falling back to sampling", type(e).__name__
+            )
             return None
         try:
             content = resp.choices[0].logprobs.content
@@ -152,7 +166,9 @@ class MockLLMJsonDecider:
             infra = any(k in st.retries for k in ("server_error", "connection", "timeout"))
             if st.status == "ERROR":
                 failed += 1.5
-                stage_votes["infrastructure" if infra else name] = stage_votes.get("infrastructure" if infra else name, 0) + 2.0
+                stage_votes["infrastructure" if infra else name] = (
+                    stage_votes.get("infrastructure" if infra else name, 0) + 2.0
+                )
             if r >= 2:
                 susp += 1.0
                 stage_votes[name] = stage_votes.get(name, 0) + 1.0
@@ -165,30 +181,45 @@ class MockLLMJsonDecider:
             if st.cost_ratio and st.cost_ratio > 3:
                 susp += 1.0
                 stage_votes[name] = stage_votes.get(name, 0) + 0.5
-            # 基线 metric 偏离
-            for m, v in st.metrics.items():
-                base = st.baseline_metrics.get(m)
-                if base is None:
-                    continue
-                if m == "score" and base > 0 and v < base * 0.6:
-                    susp += 1.5
-                    stage_votes["score"] = stage_votes.get("score", 0) + 1.5
-                elif m == "score" and base > 0 and v < base * 0.85:
-                    susp += 0.8
-                    stage_votes["extract"] = stage_votes.get("extract", 0) + 0.6
-                    missing += 0.6
+            # 基线 metric 偏离（规则抓不到的类型靠这里）
+            score_v, score_base = st.metrics.get("score"), st.baseline_metrics.get("score")
+            dis_v, dis_base = (
+                st.metrics.get("disagreement"),
+                st.baseline_metrics.get("disagreement"),
+            )
+            if score_v is not None and score_base:
+                if score_v < score_base * 0.65:
+                    susp += 2.0  # 远低于分布：scoring_anomaly
+                    stage_votes["score"] = stage_votes.get("score", 0) + 2.0
+                elif score_v < score_base * 0.78:
+                    susp += 1.0
+                    stage_votes["score"] = stage_votes.get("score", 0) + 0.8
+                # 分数偏低 + 分歧略增（低于硬阈值）：像是输入页选错了
+                if (
+                    dis_v is not None
+                    and dis_base is not None
+                    and dis_v > max(5.0, 2.5 * dis_base)
+                    and score_v < score_base * 0.95
+                ):
+                    susp += 1.8
+                    missing += 1.2
+                    stage_votes["extract"] = stage_votes.get("extract", 0) + 1.8
             if name == "score" and st.metrics.get("disagreement_flag", 0) >= 1:
-                susp += 1.2
-                stage_votes["score"] = stage_votes.get("score", 0) + 1.2
+                susp += 2.0
+                stage_votes["score"] = stage_votes.get("score", 0) + 2.0
         # 页数关系
         structure = state.stages.get("structure")
         expected_pages = state.job.metrics.get("answer_pages")
-        if structure and expected_pages and structure.metrics.get("pages_mapped", expected_pages) < expected_pages:
+        if (
+            structure
+            and expected_pages
+            and structure.metrics.get("pages_mapped", expected_pages) < expected_pages
+        ):
             susp += 1.5
             missing += 1.5
             stage_votes["structure"] = stage_votes.get("structure", 0) + 1.5
         # 一次 429 后成功不算可疑
-        health = _softmax({"normal": 1.0, "suspicious": susp, "failed": failed}, temp=0.9)
+        health = _softmax({"normal": 1.2, "suspicious": susp, "failed": failed}, temp=0.9)
 
         out = []
         for q in questions:

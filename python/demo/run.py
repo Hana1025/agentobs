@@ -1,8 +1,8 @@
 """demo 入口。
 
-    python -m demo.run --rate 6/min --seed 42        # 持续产生流量
-    python -m demo.run --batch 300 --seed 42         # 一次性生成评测集
-    python -m demo.run --batch 20 --fault none       # 只跑正常样本（M2）
+python -m demo.run --rate 6/min --seed 42        # 持续产生流量
+python -m demo.run --batch 300 --seed 42         # 一次性生成评测集
+python -m demo.run --batch 20 --fault none       # 只跑正常样本（M2）
 """
 
 from __future__ import annotations
@@ -58,7 +58,9 @@ def init_sdk(args: argparse.Namespace) -> None:
     dsn = os.environ.get("AGENTOBS_QUEUE_DSN")
     if dsn and not args.no_queue:
         queue = ao.PgmqQueue(dsn)
-    pricing = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agentobs", "pricing.example.yaml")
+    pricing = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "agentobs", "pricing.example.yaml"
+    )
     ao.init(
         service_name="demo-pipeline",
         project_id=args.project,
@@ -70,7 +72,9 @@ def init_sdk(args: argparse.Namespace) -> None:
     )
 
 
-def run_one(pipeline: Pipeline, i: int, rng: random.Random, fault: str | None, normal_ratio: float) -> None:
+def run_one(
+    pipeline: Pipeline, i: int, rng: random.Random, fault: str | None, normal_ratio: float
+) -> None:
     job_id = f"job-{i:05d}"
     seed = rng.randrange(1 << 30)
     doc = make_document(f"doc-{i:05d}", random.Random(seed))
@@ -81,7 +85,9 @@ def run_one(pipeline: Pipeline, i: int, rng: random.Random, fault: str | None, n
         out = pipeline.run_job(job_id, doc, plan, seed + 2)
         log.info("%s fault=%s score=%s %.2fs", job_id, ft, out["score"], time.monotonic() - t0)
     except Exception as e:  # noqa: BLE001  demo 里 job 失败是预期的注入结果
-        log.info("%s fault=%s FAILED (%s) %.2fs", job_id, ft, type(e).__name__, time.monotonic() - t0)
+        log.info(
+            "%s fault=%s FAILED (%s) %.2fs", job_id, ft, type(e).__name__, time.monotonic() - t0
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -101,7 +107,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-otlp", action="store_true")
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args(argv)
-    logging.basicConfig(level=args.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=args.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
     init_sdk(args)
     pipeline = build_pipeline(args)

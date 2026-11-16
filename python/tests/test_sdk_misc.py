@@ -27,7 +27,9 @@ def test_json_object_parser():
 
 def test_metrics_have_no_high_cardinality_labels(sdk):
     with ao.job("job-xyz-123"), ao.stage("s"):
-        ao.llm_call(lambda t: {"choices": [{"message": {"content": "x"}}]}, provider="m", model="mock/fast")
+        ao.llm_call(
+            lambda t: {"choices": [{"message": {"content": "x"}}]}, provider="m", model="mock/fast"
+        )
     for metric in REGISTRY.collect():
         if not metric.name.startswith("agentobs_"):
             continue

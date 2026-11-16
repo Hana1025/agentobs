@@ -78,29 +78,54 @@ def compute(results: list[CaseResult], bins: int = 10) -> dict[str, Any]:
             ece += (cnt / n) * abs(acc - avg_conf)
         else:
             acc, avg_conf = 0.0, float((lo + hi) / 2)
-        reliability.append({"bin_lower": float(lo), "bin_upper": float(hi), "confidence": avg_conf, "accuracy": acc, "count": cnt})
+        reliability.append(
+            {
+                "bin_lower": float(lo),
+                "bin_upper": float(hi),
+                "confidence": avg_conf,
+                "accuracy": acc,
+                "count": cnt,
+            }
+        )
 
     # 覆盖率—准确率：按置信度阈值从高到低
     order = np.argsort(-conf)
     coverage_accuracy = []
     for k in range(1, n + 1):
         idx = order[:k]
-        coverage_accuracy.append({"coverage": k / n, "accuracy": float(exact[idx].mean()), "threshold": float(conf[idx[-1]])})
+        coverage_accuracy.append(
+            {
+                "coverage": k / n,
+                "accuracy": float(exact[idx].mean()),
+                "threshold": float(conf[idx[-1]]),
+            }
+        )
     if n > 50:  # 下采样到约 50 个点
         step = max(1, n // 50)
         coverage_accuracy = coverage_accuracy[::step] + [coverage_accuracy[-1]]
 
     # S2 根因准确率（升级样本上，有标准答案的）
-    s2 = [(r.expected_root_cause, r.s2_root_cause) for r in results if r.route == "escalate" and r.expected_root_cause]
+    s2 = [
+        (r.expected_root_cause, r.s2_root_cause)
+        for r in results
+        if r.route == "escalate" and r.expected_root_cause
+    ]
     s2_acc = float(np.mean([e == g for e, g in s2])) if s2 else None
 
     # 可疑阶段准确率（非 normal 样本）
-    stg = [(r.expected_stage, r.predicted_stage) for r in results if r.expected_label != "normal" and r.expected_stage]
+    stg = [
+        (r.expected_stage, r.predicted_stage)
+        for r in results
+        if r.expected_label != "normal" and r.expected_stage
+    ]
     stage_acc = float(np.mean([e == g for e, g in stg])) if stg else None
 
     costs = np.array([r.cost_usd for r in results])
     lat = np.array([r.latency_s for r in results])
-    routes = {k: int((np.array([r.route for r in results]) == k).sum()) for k in ("pass", "alert", "escalate")}
+    routes = {
+        k: int((np.array([r.route for r in results]) == k).sum())
+        for k in ("pass", "alert", "escalate")
+    }
 
     return {
         "n": n,
@@ -125,7 +150,9 @@ def compute(results: list[CaseResult], bins: int = 10) -> dict[str, Any]:
     }
 
 
-def markdown_summary(backend: str, version: str, m: dict[str, Any], all_s2_cost: float | None = None) -> str:
+def markdown_summary(
+    backend: str, version: str, m: dict[str, Any], all_s2_cost: float | None = None
+) -> str:
     pct = lambda v: "–" if v is None else f"{v * 100:.1f}%"  # noqa: E731
     lines = [
         f"## {backend} ({version})",
@@ -138,7 +165,9 @@ def markdown_summary(backend: str, version: str, m: dict[str, Any], all_s2_cost:
         f"- 单条成本：${m.get('cost_per_case_usd', 0):.5f}；p50/p95 延迟：{m.get('latency_p50_s', 0):.3f}s / {m.get('latency_p95_s', 0):.3f}s",
     ]
     if all_s2_cost is not None:
-        lines.append(f"- 对照：全部直接交给 System 2 的成本 ${all_s2_cost:.4f}（分层总成本 ${m.get('cost_total_usd', 0):.4f}）")
+        lines.append(
+            f"- 对照：全部直接交给 System 2 的成本 ${all_s2_cost:.4f}（分层总成本 ${m.get('cost_total_usd', 0):.4f}）"
+        )
     lines += ["", "| fault_type | 召回 |", "| --- | --- |"]
     for k, v in sorted(m.get("recall_by_fault_type", {}).items()):
         lines.append(f"| {k} | {pct(v)} |")

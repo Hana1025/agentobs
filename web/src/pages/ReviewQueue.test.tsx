@@ -40,9 +40,11 @@ describe("ReviewForm", () => {
     fireEvent.submit(screen.getByTestId("review-form"));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit];
-    expect(String(url instanceof Request ? url.url : url)).toContain("/api/reviews");
-    expect(JSON.parse(init.body as string)).toEqual({
+    // openapi-fetch 传给 fetch 的是一个 Request 对象
+    const req = fetchMock.mock.calls[0][0] as Request;
+    expect(req.url).toContain("/api/reviews");
+    expect(req.method).toBe("POST");
+    expect(JSON.parse(await req.text())).toEqual({
       triage_id: 42,
       human_label: "failed",
       human_root_cause: "provider_failure",

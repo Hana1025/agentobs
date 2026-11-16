@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.trace_fixtures import baselines, failed_trace, missing_page_trace, normal_trace
 from triage.backends.llm_json import LLMJsonDecider, MockLLMJsonDecider, build_prompt
 from triage.backends.rules_backend import RulesDecider
 from triage.backends.systemone_http import SystemOneHttpDecider
 from triage.config import TriageConfig
 from triage.models import default_questions
 from triage.state import extract_state
-from tests.trace_fixtures import baselines, failed_trace, missing_page_trace, normal_trace
 
 
 def _answers(decider, trace, b=None):
@@ -61,9 +61,14 @@ class _FakeOpenAI:
         msg = SimpleNamespace(content=self.letter)
         lp = None
         if kw.get("logprobs"):
-            top = [SimpleNamespace(token=self.letter, logprob=math.log(0.7)), SimpleNamespace(token="B", logprob=math.log(0.2))]
+            top = [
+                SimpleNamespace(token=self.letter, logprob=math.log(0.7)),
+                SimpleNamespace(token="B", logprob=math.log(0.2)),
+            ]
             lp = SimpleNamespace(content=[SimpleNamespace(top_logprobs=top)])
-        return SimpleNamespace(choices=[SimpleNamespace(message=msg, logprobs=lp)], usage=SimpleNamespace(cost=0.0001))
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=msg, logprobs=lp)], usage=SimpleNamespace(cost=0.0001)
+        )
 
 
 def test_llm_json_uses_logprobs_when_available():

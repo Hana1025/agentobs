@@ -133,13 +133,22 @@ class TriageResult(BaseModel):
 
 def default_questions(stage_names: list[str]) -> list[Question]:
     return [
-        Question(id="health", kind="choice", prompt="Overall health of this job run.", options=HEALTH),
+        Question(
+            id="health", kind="choice", prompt="Overall health of this job run.", options=HEALTH
+        ),
         Question(
             id="suspect_stage",
             kind="choice",
             prompt="Which stage is most likely at fault (infrastructure = provider/network, none = nothing wrong).",
             options=[*stage_names, "infrastructure", "none"],
         ),
-        Question(id="missing_input", kind="bool", prompt="Was some input missing or misclassified?"),
-        Question(id="severity", kind="score", prompt="Severity from 0 (none) to 3 (critical).", score_range=(0, 3)),
+        Question(
+            id="missing_input", kind="bool", prompt="Was some input missing or misclassified?"
+        ),
+        Question(
+            id="severity",
+            kind="score",
+            prompt="Severity from 0 (none) to 3 (critical).",
+            score_range=(0, 3),
+        ),
     ]

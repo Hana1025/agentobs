@@ -53,7 +53,9 @@ class _State:
 
 state = _State()
 
-_current_job: contextvars.ContextVar[Job | None] = contextvars.ContextVar("agentobs_job", default=None)
+_current_job: contextvars.ContextVar[Job | None] = contextvars.ContextVar(
+    "agentobs_job", default=None
+)
 _current_stage: contextvars.ContextVar[Stage | None] = contextvars.ContextVar(
     "agentobs_stage", default=None
 )
@@ -87,9 +89,7 @@ def init(
             queue=queue,
             pricing=pricing if isinstance(pricing, PricingTable) else PricingTable.load(pricing),
         )
-        resource = Resource.create(
-            {attrs.SERVICE_NAME: service_name, attrs.PROJECT_ID: project_id}
-        )
+        resource = Resource.create({attrs.SERVICE_NAME: service_name, attrs.PROJECT_ID: project_id})
         provider = TracerProvider(resource=resource)
         if exporter is None and otlp_endpoint:
             exporter = OTLPSpanExporter(

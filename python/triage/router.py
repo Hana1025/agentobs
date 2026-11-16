@@ -28,7 +28,9 @@ def route(answers: dict[str, Answer], fired: list[Fired], cfg: Routing) -> str:
     return cfg.otherwise
 
 
-def needs_review(s2_confidence: float | None, severity: int, cfg: Review, s2_failed: bool = False) -> bool:
+def needs_review(
+    s2_confidence: float | None, severity: int, cfg: Review, s2_failed: bool = False
+) -> bool:
     if s2_failed:
         return True
     if s2_confidence is not None and s2_confidence < cfg.if_s2_confidence_lt:

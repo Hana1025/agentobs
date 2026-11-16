@@ -189,7 +189,11 @@ def _start_attempt_span(provider: str, model: str, attempt: int) -> Span | None:
 
 
 def _fill_success(
-    span: Span | None, info: dict[str, Any], text: str | None, parse_ok: bool | None, cost: float | None,
+    span: Span | None,
+    info: dict[str, Any],
+    text: str | None,
+    parse_ok: bool | None,
+    cost: float | None,
     input_content: str | None,
 ) -> None:
     if span is None:
@@ -213,21 +217,31 @@ def _fill_success(
         s = state.settings
         if s.capture_content:
             if input_content is not None:
-                span.set_attribute(attrs.CONTENT_INPUT, s.redactor.redact(input_content)[: s.content_max_chars])
+                span.set_attribute(
+                    attrs.CONTENT_INPUT, s.redactor.redact(input_content)[: s.content_max_chars]
+                )
             if text is not None:
-                span.set_attribute(attrs.CONTENT_OUTPUT, s.redactor.redact(text)[: s.content_max_chars])
+                span.set_attribute(
+                    attrs.CONTENT_OUTPUT, s.redactor.redact(text)[: s.content_max_chars]
+                )
     except Exception:  # noqa: BLE001
         log.warning("agentobs.llm_call: failed to set attributes", exc_info=True)
 
 
-def _record_metrics(stage: str, model: str, status: str, latency: float, info: dict[str, Any], cost: float | None) -> None:
+def _record_metrics(
+    stage: str, model: str, status: str, latency: float, info: dict[str, Any], cost: float | None
+) -> None:
     try:
         metrics.llm_requests_total.labels(stage=stage, model=model, status=status).inc()
         metrics.llm_latency_seconds.labels(stage=stage, model=model).observe(latency)
         if info.get("input_tokens"):
-            metrics.llm_tokens_total.labels(stage=stage, model=model, direction="input").inc(info["input_tokens"])
+            metrics.llm_tokens_total.labels(stage=stage, model=model, direction="input").inc(
+                info["input_tokens"]
+            )
         if info.get("output_tokens"):
-            metrics.llm_tokens_total.labels(stage=stage, model=model, direction="output").inc(info["output_tokens"])
+            metrics.llm_tokens_total.labels(stage=stage, model=model, direction="output").inc(
+                info["output_tokens"]
+            )
         if cost:
             metrics.llm_cost_usd_total.labels(stage=stage, model=model).inc(cost)
     except Exception:  # noqa: BLE001
@@ -249,7 +263,13 @@ def _compute_cost(model: str, info: dict[str, Any]) -> float | None:
 class _Attempt:
     """一次尝试的共享逻辑（同步和异步版本都用）。"""
 
-    def __init__(self, provider: str, model: str, parse: Callable[[str], Any] | None, input_content: str | None):
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        parse: Callable[[str], Any] | None,
+        input_content: str | None,
+    ):
         self.provider = provider
         self.model = model
         self.parse = parse
@@ -325,7 +345,9 @@ class _Attempt:
 
     def count_retry(self, reason: str) -> None:
         try:
-            metrics.llm_retries_total.labels(stage=self.stage, model=self.model, reason=reason).inc()
+            metrics.llm_retries_total.labels(
+                stage=self.stage, model=self.model, reason=reason
+            ).inc()
         except Exception:  # noqa: BLE001
             pass
 
