@@ -57,11 +57,11 @@ class MockModelCall:
         text = json.dumps(payload, ensure_ascii=False)
         if self.injected and p.corrupt_output:
             if self.attempt == 1:
-                text = text[: len(text) // 2] + "\x1b\\u00" + text[len(text) // 2 :]  # 非法转义
+                # 非法转义：不可解析
+                text = text[: len(text) // 2] + "\\u00zz" + text[len(text) // 2 :]
             else:
-                text = text.replace(":", ":\x00", 1) + "\x07"  # 控制字符但仍可解析（JSON 字符串外）
-                text = text.replace("\x00", "")  # 字符串外的 NUL 会破坏解析；保留 \x07 在末尾之外
-                text = text + "\x07"
+                # 控制字符在字符串值里：可解析（parser 用 strict=False），但 control_chars > 0
+                text = json.dumps({**payload, "note": "\x07\x1b[0m"}, ensure_ascii=False)
         in_tokens = len(text) // 3 + self.rng.randint(50, 200)
         out_tokens = len(text) // 4
         return {

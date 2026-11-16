@@ -25,3 +25,9 @@
 - `json_object` 解析用 `strict=False`：字符串值里的控制字符不算解析失败，由 `agentobs.output.control_chars` 计数；output_corruption 注入的“部分可解析”依赖这一点。
 - server 入库：`ingest/{OtlpSpanMapper,SpanRepository,OtlpTracesController,RetentionJob}`；单属性超过 16k 字符截断。
 - demo：`demo/{synth,faults,mock_llm,pipeline,run}.py`，故障注入器已一起写好（M4 内容提前），`--fault none` 即 M2 的“先不注入故障”。
+
+## 下一步（未开始）
+
+- M3：server 公开查询接口（`GET /api/traces`、`/api/traces/{id}`、`/api/metrics/summary`、`/api/me`）、OpenAPI 生成 TS 类型、web 总览/列表/详情（SVG 瀑布图）、nginx 已就绪、metrics profile 配置已就绪（prometheus/alerts/grafana 面板已写）。
+- M4：`python/triage`（worker、state、rules、router、backends）、内部 triage/baselines 接口、事务模式集成测试。
+- M5：System 2、复核接口与页面、eval 脚本与 CI 回归门。
