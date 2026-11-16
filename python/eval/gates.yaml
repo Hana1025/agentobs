@@ -1,0 +1,8 @@
+# CI 回归门槛（占位，评测后再调）。任一后端不达标则 CI 失败。
+fault_recall_min: 0.90          # 非 normal 样本被判为 suspicious 或 failed 的比例
+normal_false_positive_max: 0.10 # normal 样本被判为非 normal 的比例
+backends: [rules, llm_json]     # 只跑确定性后端（llm_json 用 mock）
+dataset:
+  size: 300
+  seed: 42
+  normal_ratio: 0.7

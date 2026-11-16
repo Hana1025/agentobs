@@ -51,3 +51,19 @@
 - 声明式规则默认带两条示例（missing_input_pages、model_disagreement），`right` 支持常量 `{value: N}`。
 - worker 用 InMemoryQueue + FakeServer 覆盖时序陷阱、DLQ、重复投递、预算降级；pgmq 事务回滚集成测试在 `tests/test_pgmq_integration.py`（需要 Docker，`-m integration`）。
 - Testcontainers 的 Python 测试自己 `docker build` deploy/postgres 镜像，首次较慢（编译 pgmq）。
+
+## M5 System 2、复核与评测闭环（代码完成，未验证）
+
+- `triage/s2.py`：`SystemTwo`（OpenAI 兼容，json_object 输出，解析失败重试一次）和 `MockSystemTwo`（确定性）；`validate()` 丢弃不存在的 span_id 并把置信度压到 0.49 以下。预算控制在 worker 的 `HourlyBudget`。
+- server：`review/{ReviewController,ReviewService,EvalController}`。复核在一个事务里写 reviews、置 reviewed、upsert 一条 `eval_cases(source=human_review)`；同一 triage 二次复核返回 409。
+- `eval/`：`dataset.py`（离线：进程内跑 demo 并自算基线；在线：从 server 拉 injected 用例并写回）、`metrics.py`、`run.py`、`gates.yaml`。CI 用 `--offline --gate`，不连 server。
+- 门槛占位：故障召回 ≥ 0.90、正常误报 ≤ 0.10；`tests/test_eval.py` 里用较松的 0.85/0.15 断言，因为 mock 的 timeout_cascade 在离线小样本上可能被 deadline 截断得不够慢——正式阈值等跑过一次 `make eval` 后再定。
+- “全部交给 System 2 的成本对照”在 mock 下恒为 0，真实模型时需要按 S2 的 usage 累计，当前只留了接口。
+- `docs/INTEGRATION.md` 已写（M6 的一项）；RabbitMQ、LangChain 适配器、langfuse profile 未做。
+
+## 遗留与下一步
+
+1. 在有 docker / uv / gradle 的机器上：`gradle wrapper`、`uv sync`、`npm install`，提交三份锁文件；跑 `make test`，修编译/测试错误（代码从未执行过）。
+2. 启动 server 后 `npm run gen:api` 覆盖 `web/src/api/schema.ts`。
+3. `make demo` 后用 `docker stats` 实测内存，记录到这里（SPEC 第 12 节）。
+4. 跑一次 `make eval`，按结果定 6.4 路由阈值和 10.4 门槛。
