@@ -1,0 +1,50 @@
+# 第零层告警；阈值为占位，见 SPEC 9.3
+groups:
+  - name: agentobs
+    rules:
+      - alert: JobStuck
+        expr: agentobs_job_oldest_in_progress_seconds > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "有 job 卡住超过 15 分钟"
+
+      - alert: HighRetryRate
+        expr: |
+          sum(increase(agentobs_llm_retries_total[10m]))
+            / clamp_min(sum(increase(agentobs_llm_requests_total[10m])), 1) > 0.2
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: "10 分钟内重试率超过 20%"
+
+      - alert: OutputParseFailures
+        expr: increase(agentobs_output_parse_failures_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "模型输出解析失败"
+
+      - alert: QueueSendFailures
+        expr: increase(agentobs_queue_send_failures_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "job_finished 事件发送失败"
+
+      - alert: TriageDeadLetter
+        expr: increase(agentobs_triage_dlq_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "分诊消息进入死信队列"
+
+      - alert: ReviewBacklog
+        expr: agentobs_review_backlog > 20
+        for: 1h
+        labels: {severity: info}
+        annotations:
+          summary: "待人工复核积压超过 20 条"
+
+      - alert: IngestErrors
+        expr: increase(agentobs_ingest_spans_total{result="error"}[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "server 入库出错"

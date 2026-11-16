@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "占位密码与测试 token"
+regexes = [
+  '''change-me-[a-z-]+''',
+  '''(server|pipeline|triage)-test''',
+  '''(ingest|internal)-test-token''',
+]
+paths = [
+  '''deploy/\.env\.example''',
+  '''docs/.*''',
+]

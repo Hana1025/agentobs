@@ -1,0 +1,38 @@
+{
+  "uid": "agentobs-triage",
+  "title": "agentobs / 分诊",
+  "tags": ["agentobs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "路由分布 / h", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "targets": [{"expr": "sum by (route) (increase(agentobs_triage_total[1h]))", "legendFormat": "{{route}}"}]},
+    {"id": 2, "type": "timeseries", "title": "S1 标签分布 / h", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "targets": [{"expr": "sum by (s1_label, backend) (increase(agentobs_triage_total[1h]))", "legendFormat": "{{backend}} {{s1_label}}"}]},
+    {"id": 3, "type": "heatmap", "title": "置信度分布", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "targets": [{"expr": "sum by (le) (rate(agentobs_triage_confidence_bucket[5m]))", "format": "heatmap", "legendFormat": "{{le}}"}]},
+    {"id": 4, "type": "stat", "title": "升级率 (1h)", "gridPos": {"x": 12, "y": 8, "w": 6, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "fieldConfig": {"defaults": {"unit": "percentunit"}},
+     "targets": [{"expr": "sum(increase(agentobs_triage_total{route=\"escalate\"}[1h])) / clamp_min(sum(increase(agentobs_triage_total[1h])), 1)"}]},
+    {"id": 5, "type": "stat", "title": "复核积压", "gridPos": {"x": 18, "y": 8, "w": 6, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "targets": [{"expr": "agentobs_review_backlog"}]},
+    {"id": 6, "type": "timeseries", "title": "分诊成本 USD / h（按 system）", "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+     "targets": [{"expr": "sum by (system) (rate(agentobs_triage_cost_usd_total[5m])) * 3600", "legendFormat": "{{system}}"}]},
+    {"id": 7, "type": "timeseries", "title": "分诊 P95 延迟 (s) / 死信", "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "prometheus"},
+     "targets": [
+       {"expr": "histogram_quantile(0.95, sum by (le, system) (rate(agentobs_triage_latency_seconds_bucket[5m])))", "legendFormat": "p95 {{system}}"},
+       {"expr": "sum by (reason) (increase(agentobs_triage_dlq_total[1h]))", "legendFormat": "dlq {{reason}}"}
+     ]}
+  ]
+}
