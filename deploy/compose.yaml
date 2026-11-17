@@ -78,7 +78,8 @@ services:
     environment:
       AGENTOBS_SERVER_URL: http://server:8080
       AGENTOBS_INTERNAL_TOKEN: ${AGENTOBS_INTERNAL_TOKEN}
-      AGENTOBS_QUEUE_DSN: postgresql://agentobs_triage:${AGENTOBS_TRIAGE_DB_PASSWORD}@postgres:5432/agentobs
+      # 默认 pgmq；在 .env 里设 AGENTOBS_TRIAGE_QUEUE_URL=amqp://… 并启用 rabbitmq profile 即切到 RabbitMQ
+      AGENTOBS_QUEUE_URL: ${AGENTOBS_TRIAGE_QUEUE_URL:-postgresql://agentobs_triage:${AGENTOBS_TRIAGE_DB_PASSWORD}@postgres:5432/agentobs}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       S1_MODEL: ${S1_MODEL:-}
@@ -87,6 +88,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       server: {condition: service_healthy}
+      rabbitmq-init: {condition: service_completed_successfully, required: false}
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request as u; u.urlopen(\"http://localhost:9465/metrics\")'"]
       interval: 15s
@@ -163,7 +165,7 @@ services:
     profiles: [demo]
     environment:
       AGENTOBS_OTLP_ENDPOINT: http://otel-collector:4318
-      AGENTOBS_QUEUE_DSN: postgresql://agentobs_pipeline:${AGENTOBS_PIPELINE_DB_PASSWORD}@postgres:5432/agentobs
+      AGENTOBS_QUEUE_URL: ${AGENTOBS_PIPELINE_QUEUE_URL:-postgresql://agentobs_pipeline:${AGENTOBS_PIPELINE_DB_PASSWORD}@postgres:5432/agentobs}
       AGENTOBS_METRICS_PORT: "9464"
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -172,10 +174,47 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       otel-collector: {condition: service_started}
+      rabbitmq-init: {condition: service_completed_successfully, required: false}
     deploy:
       resources: {limits: {memory: 1g}}
+    <<: *logging
+
+  # ---- M6：RabbitMQ 队列（可选）。切换方法见 docs/INTEGRATION.md ----
+  rabbitmq:
+    image: rabbitmq:4.1.4-management-alpine
+    profiles: [rabbitmq]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-agentobs_admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD}
+    volumes:
+      - mqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources: {limits: {memory: 512m}}
+    <<: *logging
+
+  rabbitmq-init:
+    image: curlimages/curl:8.15.0
+    profiles: [rabbitmq]
+    entrypoint: ["/bin/sh", "/init.sh"]
+    environment:
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-agentobs_admin}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD}
+      AGENTOBS_PIPELINE_MQ_PASSWORD: ${AGENTOBS_PIPELINE_MQ_PASSWORD}
+      AGENTOBS_TRIAGE_MQ_PASSWORD: ${AGENTOBS_TRIAGE_MQ_PASSWORD}
+    volumes:
+      - ./rabbitmq/init.sh:/init.sh:ro
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+    restart: "no"
     <<: *logging
 
 volumes:
   pgdata:
   promdata:
+  mqdata:

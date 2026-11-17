@@ -1,0 +1,12 @@
+# M6：Langfuse 导出（叠加在 compose.yaml 之上）。只改 collector：多一条发往外部 Langfuse 的 pipeline。
+# 不自建 Langfuse：它的 v3 自建需要 ClickHouse、Redis、对象存储，超出本项目的基础设施约束。
+#   docker compose -f compose.yaml -f compose.langfuse.yaml --env-file .env --profile core --profile metrics --profile demo up -d
+services:
+  otel-collector:
+    command: ["--config=/etc/otelcol/config-langfuse.yaml"]
+    environment:
+      LANGFUSE_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-https://cloud.langfuse.com/api/public/otel}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?set LANGFUSE_PUBLIC_KEY in .env}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?set LANGFUSE_SECRET_KEY in .env}
+    volumes:
+      - ./otel-collector/config-langfuse.yaml:/etc/otelcol/config-langfuse.yaml:ro

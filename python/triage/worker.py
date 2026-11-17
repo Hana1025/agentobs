@@ -15,7 +15,7 @@ from typing import Any
 
 from prometheus_client import start_http_server
 
-from agentobs.queue.port import Message, QueuePort
+from agentobs.queue.port import Message, QueuePort, dead_letter, queue_from_url
 from triage import metrics as m
 from triage.backends import make_decider
 from triage.client import ServerClient
@@ -190,12 +190,8 @@ class TriageWorker:
         return Outcome.DEFER
 
     def _dead_letter(self, msg: Message, reason: str) -> str:
-        payload = dict(msg.message)
-        payload["reason"] = reason
-        payload["read_ct"] = msg.read_ct
         try:
-            self.queue.send(self.cfg.worker.dlq, payload)
-            self.queue.archive(self.cfg.worker.queue, msg.msg_id)
+            dead_letter(self.queue, self.cfg.worker.queue, self.cfg.worker.dlq, msg, reason)
             m.triage_dlq_total.labels(reason=reason).inc()
             log.error("message %s moved to DLQ: %s", msg.msg_id, reason)
         except Exception:  # noqa: BLE001
@@ -235,9 +231,8 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     cfg = TriageConfig.load()
-    from agentobs.queue.pgmq import PgmqQueue
-
-    queue = PgmqQueue(os.environ["AGENTOBS_QUEUE_DSN"])
+    # postgresql://… → pgmq，amqp://… → RabbitMQ
+    queue = queue_from_url(os.environ.get("AGENTOBS_QUEUE_URL") or os.environ["AGENTOBS_QUEUE_DSN"])
     server = ServerClient(
         os.environ.get("AGENTOBS_SERVER_URL", "http://localhost:8080"),
         os.environ.get("AGENTOBS_INTERNAL_TOKEN", ""),

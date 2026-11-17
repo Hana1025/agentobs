@@ -95,6 +95,28 @@ def test_transactional_mode_rolls_back_with_business_transaction(dsn):
     assert any(m.msg_id == mid for m in triage_q.read("job_finished", 0, 100))
 
 
+def test_transactional_example_script_runs(dsn):
+    """INTEGRATION.md 第 5 节的示例脚本：--fail 回滚后没有消息，正常运行后恰好一条。"""
+    from tests.test_examples import run_example
+
+    triage_q = PgmqQueue(dsn["triage"])
+
+    def count() -> int:
+        msgs = triage_q.read("job_finished", 0, 1000)
+        return sum(1 for m in msgs if m.message.get("job_id") == "job-tx-example")
+
+    env = {"AGENTOBS_QUEUE_URL": dsn["pipeline"]}
+    r = run_example("examples.transactional_pgmq", "--fail", env=env)
+    assert r.returncode == 0, r.stderr
+    assert "rolled back" in r.stdout
+    assert count() == 0
+
+    r = run_example("examples.transactional_pgmq", env=env)
+    assert r.returncode == 0, r.stderr
+    assert "committed msg_id=" in r.stdout
+    assert count() == 1
+
+
 @pytest.mark.skipif(not os.environ.get("AGENTOBS_QUEUE_DSN"), reason="needs AGENTOBS_QUEUE_DSN")
 def test_against_running_stack():
     q = PgmqQueue(os.environ["AGENTOBS_QUEUE_DSN"])

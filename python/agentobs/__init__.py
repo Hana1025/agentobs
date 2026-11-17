@@ -30,7 +30,7 @@ from agentobs.core.tracer import (
     shutdown,
     stage,
 )
-from agentobs.queue.port import InMemoryQueue, QueuePort
+from agentobs.queue.port import InMemoryQueue, QueuePort, queue_from_url
 
 __version__ = "0.1.0"
 
@@ -45,6 +45,7 @@ __all__ = [
     "PgmqQueue",
     "PricingTable",
     "QueuePort",
+    "RabbitMQQueue",
     "Redactor",
     "Stage",
     "attrs",
@@ -56,6 +57,7 @@ __all__ = [
     "llm_call",
     "llm_call_async",
     "parsers",
+    "queue_from_url",
     "shutdown",
     "stage",
 ]
@@ -66,4 +68,8 @@ def __getattr__(name: str):
         from agentobs.queue.pgmq import PgmqQueue
 
         return PgmqQueue
+    if name == "RabbitMQQueue":
+        from agentobs.queue.rabbitmq import RabbitMQQueue
+
+        return RabbitMQQueue
     raise AttributeError(name)

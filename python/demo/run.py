@@ -55,9 +55,9 @@ def cfg_to_pipeline(cfg: PipelineConfig) -> Pipeline:
 
 def init_sdk(args: argparse.Namespace) -> None:
     queue = None
-    dsn = os.environ.get("AGENTOBS_QUEUE_DSN")
-    if dsn and not args.no_queue:
-        queue = ao.PgmqQueue(dsn)
+    url = os.environ.get("AGENTOBS_QUEUE_URL") or os.environ.get("AGENTOBS_QUEUE_DSN")
+    if url and not args.no_queue:
+        queue = ao.queue_from_url(url)  # postgresql:// → pgmq，amqp:// → RabbitMQ
     pricing = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "agentobs", "pricing.example.yaml"
     )

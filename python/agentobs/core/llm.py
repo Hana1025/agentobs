@@ -333,23 +333,45 @@ class _Attempt:
         return reason
 
     def _end_error(self, span: Span | None, exc: BaseException, reason: str | None) -> None:
-        try:
-            if span is not None:
-                span.set_status(Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:500]))
-                if reason:
-                    span.set_attribute(attrs.RETRY_REASON, reason)
-                span.record_exception(exc)
-                span.end()
-        except Exception:  # noqa: BLE001
-            pass
+        end_error_span(span, exc, reason)
 
     def count_retry(self, reason: str) -> None:
-        try:
-            metrics.llm_retries_total.labels(
-                stage=self.stage, model=self.model, reason=reason
-            ).inc()
-        except Exception:  # noqa: BLE001
-            pass
+        count_retry(self.stage, self.model, reason)
+
+
+def end_error_span(span: Span | None, exc: BaseException, reason: str | None) -> None:
+    try:
+        if span is not None:
+            span.set_status(Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:500]))
+            if reason:
+                span.set_attribute(attrs.RETRY_REASON, reason)
+            span.record_exception(exc)
+            span.end()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def end_ok_span(span: Span | None) -> None:
+    try:
+        if span is not None:
+            span.set_status(Status(StatusCode.OK))
+            span.end()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def count_retry(stage: str, model: str, reason: str) -> None:
+    try:
+        metrics.llm_retries_total.labels(stage=stage, model=model, reason=reason).inc()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# 公共名字：其他埋点入口（LangChain 适配器）共用同一套属性和指标逻辑，保证 span 一致
+start_attempt_span = _start_attempt_span
+fill_success_attributes = _fill_success
+record_metrics = _record_metrics
+compute_cost = _compute_cost
 
 
 def llm_call(

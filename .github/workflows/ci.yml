@@ -34,6 +34,31 @@ jobs:
       - name: eval regression gate (rules + mock llm_json)
         run: uv run python -m eval.run --backend rules --backend llm_json --offline --gate
 
+  deploy-config:
+    # compose 各 profile 组合、Langfuse 覆盖文件、三份 collector 配置都能通过校验
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: deploy } }
+    steps:
+      - uses: actions/checkout@v4
+      - name: compose config
+        run: |
+          cp .env.example .env
+          sed -i 's/^LANGFUSE_PUBLIC_KEY=$/LANGFUSE_PUBLIC_KEY=pk-lf-ci/; s/^LANGFUSE_SECRET_KEY=$/LANGFUSE_SECRET_KEY=sk-lf-ci/' .env
+          ALL="--profile core --profile metrics --profile demo --profile rabbitmq --profile dev"
+          docker compose -f compose.yaml --env-file .env --profile core config -q
+          docker compose -f compose.yaml --env-file .env --profile core --profile metrics --profile demo config -q
+          docker compose -f compose.yaml --env-file .env $ALL config -q
+          docker compose -f compose.yaml -f compose.langfuse.yaml --env-file .env $ALL config -q
+      - name: collector configs
+        run: |
+          for f in config.yaml config-demo.yaml config-langfuse.yaml; do
+            echo "== $f"
+            docker run --rm -v "$PWD/otel-collector:/cfg:ro" \
+              -e AGENTOBS_INGEST_TOKEN=ci -e LANGFUSE_OTLP_ENDPOINT=https://example.invalid/api/public/otel \
+              -e LANGFUSE_PUBLIC_KEY=pk -e LANGFUSE_SECRET_KEY=sk \
+              otel/opentelemetry-collector-contrib:0.118.0 validate --config=/cfg/$f
+          done
+
   java:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: server } }

@@ -29,6 +29,37 @@ class QueuePort(Protocol):
     def delete(self, queue: str, msg_id: int) -> bool: ...
 
 
+def dead_letter(port: QueuePort, queue: str, dlq: str, msg: Message, reason: str) -> None:
+    """把消息移进死信队列。
+
+    实现了 ``dead_letter`` 的队列（RabbitMQ：原生 DLX）由它自己处理；
+    其余（pgmq、内存）发一份带 reason 的副本到 dlq，再归档原消息。
+    """
+    native = getattr(port, "dead_letter", None)
+    if callable(native):
+        native(queue, dlq, msg, reason)
+        return
+    payload = dict(msg.message)
+    payload["reason"] = reason
+    payload["read_ct"] = msg.read_ct
+    port.send(dlq, payload)
+    port.archive(queue, msg.msg_id)
+
+
+def queue_from_url(url: str) -> QueuePort:
+    """按连接串选择实现：postgresql:// → pgmq，amqp(s):// → RabbitMQ。只改配置即可切换。"""
+    scheme = url.split("://", 1)[0].lower()
+    if scheme in ("postgres", "postgresql"):
+        from agentobs.queue.pgmq import PgmqQueue
+
+        return PgmqQueue(url)
+    if scheme in ("amqp", "amqps"):
+        from agentobs.queue.rabbitmq import RabbitMQQueue
+
+        return RabbitMQQueue(url)
+    raise ValueError(f"unsupported queue url scheme: {scheme!r}")
+
+
 class InMemoryQueue:
     """测试用。"""
 
