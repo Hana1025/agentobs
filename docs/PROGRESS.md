@@ -59,7 +59,7 @@
 - `eval/`：`dataset.py`（离线：进程内跑 demo 并自算基线；在线：从 server 拉 injected 用例并写回）、`metrics.py`、`run.py`、`gates.yaml`。CI 用 `--offline --gate`，不连 server。
 - 门槛占位：故障召回 ≥ 0.90、正常误报 ≤ 0.10；`tests/test_eval.py` 里用较松的 0.85/0.15 断言，因为 mock 的 timeout_cascade 在离线小样本上可能被 deadline 截断得不够慢——正式阈值等跑过一次 `make eval` 后再定。
 - “全部交给 System 2 的成本对照”在 mock 下恒为 0，真实模型时需要按 S2 的 usage 累计，当前只留了接口。
-- `docs/INTEGRATION.md` 已写（M6 的一项）；RabbitMQ、LangChain 适配器、langfuse profile 未做。
+- `docs/INTEGRATION.md` 已写；M6 其余项见下方“M6 可选扩展”。
 
 ## 遗留与下一步
 
@@ -103,3 +103,21 @@
 
 - `make demo` 整套 compose 起来的端到端效果（collector → server → worker → 看板），以及 M3/M4 里依赖运行环境的验收项（JobStuck 告警、collector 延迟 2 分钟的时序陷阱、nginx 不暴露内部接口、docker stats 内存实测）。
 - 真实模型下的 llm_json / System 2（只跑过 mock）。
+
+## M6 可选扩展（完成，CI 通过）
+
+CI 全部 6 个任务通过（新增 deploy-config），包括 RabbitMQ 和 pgmq 的 Testcontainers 集成测试。
+
+- **RabbitMQ**：`agentobs/queue/rabbitmq.py`（pika）。`queue_from_url` 按连接串前缀选实现，worker 和 demo 只改 `AGENTOBS_QUEUE_URL` 即可切换。
+  - 可见性超时：未处理完的消息带着读取次数改投到 `job_finished.retry`，按消息 TTL 到期后由 DLX 送回主队列。读取次数放在消息头 `x-agentobs-read-ct`，不依赖 broker 的投递计数。
+  - 死信：`QueuePort` 新增可选的 `dead_letter`；RabbitMQ 用 `basic.reject` 交给主队列的原生 DLX。死信原因不随消息走，只在 worker 日志和 `agentobs_triage_dlq_total{reason}` 里。
+  - 事务模式只支持 pgmq（已与用户确认）；RabbitMQ 下 `finish_in` 抛 NotImplementedError，并有测试。
+  - compose `rabbitmq` profile + `rabbitmq-init`（管理 API 建队列和最小权限账号）；`make demo-rabbitmq`。
+- **LangChain**：`agentobs/adapters/langchain.py`，与 `llm_call` 共用建 span、填属性、记指标的函数。测试逐项比较属性集合，含 `with_retry` 下的尝试编号与 retry_reason。
+- **Langfuse**：只导出到外部实例（自建需要 ClickHouse、Redis、对象存储，违反基础设施约束，已与用户确认）。`otel-collector/config-langfuse.yaml` 多一条 pipeline：脱敏 → `agentobs.cost_usd` 复制为 `gen_ai.usage.cost` → OTLP/HTTP，带 `x-langfuse-ingestion-version: 4`。用 `compose.langfuse.yaml` 叠加，`make demo-langfuse`。实现为覆盖文件而非 profile：collector 是同一个服务，profile 无法只给它加导出器。
+- **INTEGRATION.md**：代码全部摘自 `python/examples/*` 的可运行脚本；`tests/test_examples.py` 运行脚本并检查文档代码块与脚本逐字一致；事务示例在 pgmq 集成测试里真实执行。
+- 顺带修复：`config-demo.yaml` 早期被 sed 误删了 pipeline 的 processors / exporters，collector 用它会起不来；三份 collector 配置现在都在 CI 里校验。
+
+## 本地运行（未完成）
+
+本机和 WSL 都没有 Docker 或 Postgres；下载 Postgres 免安装包被自动模式拦截，等用户选择提供 Postgres 的方式。
