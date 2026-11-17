@@ -31,9 +31,11 @@ def _docker_available() -> bool:
 def dsn():
     if not _docker_available():
         pytest.skip("docker not available")
-    subprocess.run(
-        ["docker", "build", "-t", IMAGE, str(DEPLOY_PG)], check=True, capture_output=True
+    build = subprocess.run(
+        ["docker", "build", "-t", IMAGE, str(DEPLOY_PG)], capture_output=True, text=True
     )
+    if build.returncode != 0:
+        pytest.fail(f"docker build failed:\n{build.stdout[-3000:]}\n{build.stderr[-3000:]}")
     with (
         PostgresContainer(IMAGE, username="postgres", password="postgres", dbname="agentobs")
         .with_env("AGENTOBS_SERVER_DB_PASSWORD", "s")

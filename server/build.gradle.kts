@@ -13,6 +13,9 @@ java {
 
 repositories { mavenCentral() }
 
+// Spring Boot 3.4.2 的 BOM 带 Testcontainers 1.20.x，连不上 Docker 29（要求 API ≥ 1.44）；1.21.4 修复了这一点
+extra["testcontainers.version"] = "1.21.4"
+
 val otelProtoVersion = "1.5.0-alpha"
 val springdocVersion = "2.8.4"
 
