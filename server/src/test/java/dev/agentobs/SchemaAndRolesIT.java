@@ -35,8 +35,9 @@ class SchemaAndRolesIT extends PostgresTestBase {
             while (rs.next()) queues.add(rs.getString(1));
             assertThat(queues).containsExactly("job_finished", "job_finished_dlq");
         }
+        // Spring 把权限错误包装成 BadSqlGrammarException，原始信息在根因里
         assertThatThrownBy(() -> jdbc.queryForList("SELECT queue_name FROM pgmq.meta", String.class))
-                .hasMessageContaining("permission denied");
+                .rootCause().hasMessageContaining("permission denied");
     }
 
     @Test
