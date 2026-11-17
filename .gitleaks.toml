@@ -10,5 +10,8 @@ regexes = [
 ]
 paths = [
   '''deploy/\.env\.example''',
+  '''python/tests/.*''',          # 脱敏测试用的假 key
+  '''.*\.lock''',
+  '''web/package-lock\.json''',
   '''docs/.*''',
 ]
