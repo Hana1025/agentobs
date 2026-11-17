@@ -27,9 +27,16 @@ class SchemaAndRolesIT extends PostgresTestBase {
     }
 
     @Test
-    void pgmqQueuesExist() {
-        List<String> queues = jdbc.queryForList("SELECT queue_name FROM pgmq.meta ORDER BY 1", String.class);
-        assertThat(queues).containsExactly("job_finished", "job_finished_dlq");
+    void pgmqQueuesExist() throws SQLException {
+        // server 账号不访问 pgmq（规格 4.3），用超级用户检查
+        try (Connection c = connectAs("postgres", "postgres"); Statement st = c.createStatement();
+             java.sql.ResultSet rs = st.executeQuery("SELECT queue_name FROM pgmq.meta ORDER BY 1")) {
+            List<String> queues = new java.util.ArrayList<>();
+            while (rs.next()) queues.add(rs.getString(1));
+            assertThat(queues).containsExactly("job_finished", "job_finished_dlq");
+        }
+        assertThatThrownBy(() -> jdbc.queryForList("SELECT queue_name FROM pgmq.meta", String.class))
+                .hasMessageContaining("permission denied");
     }
 
     @Test

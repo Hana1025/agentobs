@@ -13,6 +13,8 @@ GRANT USAGE ON SCHEMA pgmq TO agentobs_pipeline;
 GRANT EXECUTE ON FUNCTION pgmq.send(text, jsonb, integer) TO agentobs_pipeline;
 GRANT EXECUTE ON FUNCTION pgmq.send(text, jsonb, timestamptz) TO agentobs_pipeline;
 GRANT INSERT ON TABLE pgmq.q_job_finished TO agentobs_pipeline;
+-- pgmq.send 是 INSERT … RETURNING msg_id，需要对返回列有 SELECT；只给这一列，读不到消息内容
+GRANT SELECT (msg_id) ON TABLE pgmq.q_job_finished TO agentobs_pipeline;
 GRANT USAGE ON SEQUENCE pgmq.q_job_finished_msg_id_seq TO agentobs_pipeline;
 GRANT SELECT ON TABLE pgmq.meta TO agentobs_pipeline;
 
@@ -20,7 +22,8 @@ GRANT SELECT ON TABLE pgmq.meta TO agentobs_pipeline;
 GRANT USAGE ON SCHEMA pgmq TO agentobs_triage;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgmq TO agentobs_triage;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE pgmq.q_job_finished, pgmq.q_job_finished_dlq TO agentobs_triage;
-GRANT INSERT ON TABLE pgmq.a_job_finished, pgmq.a_job_finished_dlq TO agentobs_triage;
+-- pgmq.archive 是 DELETE … RETURNING 再 INSERT … RETURNING，归档表也需要 SELECT
+GRANT SELECT, INSERT ON TABLE pgmq.a_job_finished, pgmq.a_job_finished_dlq TO agentobs_triage;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA pgmq TO agentobs_triage;
 GRANT SELECT ON TABLE pgmq.meta TO agentobs_triage;
 

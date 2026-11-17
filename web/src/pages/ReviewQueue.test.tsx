@@ -10,6 +10,8 @@ const triage: TriageDto = {
   projectId: "demo",
   triageVersion: "v1",
   rulesFired: ["retries_high"],
+  state: {},
+  triageCostUsd: 0,
   route: "escalate",
   reviewStatus: "pending",
   s1Label: "suspicious",

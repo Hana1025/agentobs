@@ -45,8 +45,8 @@ public class EvalController {
             @JsonProperty("dataset_size") int datasetSize,
             @JsonProperty("metrics") @NotNull Map<String, Object> metrics) {}
 
-    public record EvalRunDto(long id, String backend, String triageVersion, int datasetSize,
-                             Map<String, Object> metrics, OffsetDateTime createdAt) {}
+    public record EvalRunDto(long id, @NotNull String backend, @NotNull String triageVersion, int datasetSize,
+                             @NotNull Map<String, Object> metrics, @NotNull OffsetDateTime createdAt) {}
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper om;

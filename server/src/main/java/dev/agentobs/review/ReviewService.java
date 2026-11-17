@@ -26,9 +26,9 @@ public class ReviewService {
             @JsonProperty("human_root_cause") String humanRootCause,
             @JsonProperty("note") String note) {}
 
-    public record ReviewResponse(ReviewDto review, long evalCaseId) {}
+    public record ReviewResponse(@NotNull ReviewDto review, long evalCaseId) {}
 
-    public record ReviewQueueItem(TriageDto triage, String jobId, int severity, String suspectStage) {}
+    public record ReviewQueueItem(@NotNull TriageDto triage, String jobId, int severity, String suspectStage) {}
 
     private final JdbcTemplate jdbc;
     private final TraceQueryService query;
