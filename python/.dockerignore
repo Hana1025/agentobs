@@ -1,0 +1,7 @@
+# 本机的虚拟环境和缓存不能进镜像（Windows 上的 .venv 在 Linux 里不可用）
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+eval/reports/
+*.egg-info/

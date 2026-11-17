@@ -179,7 +179,9 @@ class MockSystemTwo:
                         failed_stage,
                         attrs.RETRY_REASON,
                         "attempts timed out",
-                        lambda c: c.get("statusCode") == "ERROR",
+                        lambda c: (
+                            c.get("statusCode") == "ERROR" and c.get("name", "").startswith("chat ")
+                        ),
                     ),
                     "summary": f"{failed_stage} exhausted retries on timeouts",
                 }
@@ -191,7 +193,9 @@ class MockSystemTwo:
                         failed_stage,
                         attrs.RETRY_REASON,
                         "provider returned errors on every attempt",
-                        lambda c: c.get("statusCode") == "ERROR",
+                        lambda c: (
+                            c.get("statusCode") == "ERROR" and c.get("name", "").startswith("chat ")
+                        ),
                     ),
                     "summary": f"provider failed in {failed_stage}",
                 }

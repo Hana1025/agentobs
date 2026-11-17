@@ -118,6 +118,25 @@ CI 全部 6 个任务通过（新增 deploy-config），包括 RabbitMQ 和 pgmq
 - **INTEGRATION.md**：代码全部摘自 `python/examples/*` 的可运行脚本；`tests/test_examples.py` 运行脚本并检查文档代码块与脚本逐字一致；事务示例在 pgmq 集成测试里真实执行。
 - 顺带修复：`config-demo.yaml` 早期被 sed 误删了 pipeline 的 processors / exporters，collector 用它会起不来；三份 collector 配置现在都在 CI 里校验。
 
-## 本地运行（未完成）
+## 本地端到端运行（2026-11-17，Docker Desktop 29.9.3，WSL 2，3.8 GB）
 
-本机和 WSL 都没有 Docker 或 Postgres；下载 Postgres 免安装包被自动模式拦截，等用户选择提供 Postgres 的方式。
+`docker compose --profile core --profile metrics --profile demo up -d --build` 全部服务启动；demo 流水线以 6 job/min 运行。
+
+已验证的运行时验收项：
+
+- M1：core 服务全部 healthy；Flyway 在真实库上建表成功。
+- M2：每条 trace 恰有一个根 span；库里没有 `agentobs.content.*`；server 启动前 collector 导出失败后自动重试成功，demo 流水线照常完成。
+- M3：看板总览、列表、详情（瀑布图、重试虚线、证据点击高亮）正常；Grafana 启动即有 Prometheus 数据源和两个面板；Prometheus 5 个抓取目标全部 up；nginx 对 `/api/internal/` 和 `/v1/` 返回 404。
+- M4：每个完成的 job 都有一条 trace_triage；时序陷阱自然复现：worker 先读到消息、span 后到，消息暂缓 60 秒后被正常分诊。
+- M5：provider_failure 的 job 升级到 System 2，根因判为 provider_failure，进复核队列；提交复核后从队列消失并生成 human_review 评测用例。
+- 内存实测：全部容器合计约 740 MB（server 259 MB、grafana 138 MB、collector 82 MB、demo 66 MB、prometheus 58 MB、postgres 54 MB、worker 39 MB），远低于 4 核 8 GB 的约束。
+
+本地运行时修掉的问题：
+
+- Python 镜像：`ghcr.io/astral-sh/uv:0.13.8-python3.12-bookworm-slim` 标签不存在；改为 `python:3.12.12-slim-bookworm` 加从 `uv:0.13.8` 拷贝二进制。
+- 新增 `python/.dockerignore` 和根目录 `.dockerignore`：本机的 `.venv`、`node_modules`（Windows 原生二进制）不能进镜像。CI 里没有这些目录，所以之前没暴露。
+- 看板和 Grafana 的宿主机端口改为可配置（`AGENTOBS_WEB_PORT`、`GRAFANA_PORT`）；本机 8088 被 Docker Desktop 的教程容器占用，本地用 8089。
+- mock System 2 的证据会引用阶段 span 上并不存在的 `agentobs.retry_reason`；改为只引用模型调用 span。
+- `test_removing_builtin_rule_breaks_gate` 依赖真实耗时，偶发失败；测试里同时关掉 slow_stage / cost_spike 阈值。
+
+仍未验证：JobStuck 告警触发、collector 人为延迟 2 分钟、真实模型下的 llm_json / System 2、`make demo-rabbitmq` 和 `make demo-langfuse` 的端到端运行。

@@ -1,0 +1,11 @@
+# 以仓库根目录为构建上下文的镜像（web/nginx）用；本机的依赖和产物不能进镜像
+.git/
+.local/
+**/node_modules/
+web/dist/
+**/*.tsbuildinfo
+python/.venv/
+server/build/
+server/.gradle/
+deploy/.env
+*.log

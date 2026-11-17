@@ -116,7 +116,11 @@ def test_removing_builtin_rule_breaks_gate(dataset, monkeypatch):
 
     monkeypatch.setattr(rules, "builtin_rules", without_job_failed)
     cfg = TriageConfig.load()
-    cfg.thresholds.retries_high_min = 99  # 同时让 retries 也抓不到，确保 provider_failure 漏掉
+    # 同时关掉其他可能兜底的规则，确保 provider_failure 漏掉。slow_stage 依赖真实耗时，
+    # 不关的话失败 job 偶尔会慢到被它抓住，测试就变得不稳定
+    cfg.thresholds.retries_high_min = 99
+    cfg.thresholds.slow_stage_ratio = 1e9
+    cfg.thresholds.cost_spike_ratio = 1e9
     m, _ = evaluate_backend(cfg, "rules", dataset, offline=True, with_s2=False)
     assert m["recall_by_fault_type"]["provider_failure"] == 0.0
     assert check_gates({"rules": m}, GATES)
