@@ -4,7 +4,7 @@
 
 ## 通用说明
 
-- 本机没有 Docker，所以**需要 Testcontainers 的 Java IT 和 Python pgmq 集成测试没有跑过**，只在 CI 里跑。其余测试本机全绿（见“验证记录”）。
+- 本机没有 Docker；Testcontainers 的 Java IT 和 Python pgmq 集成测试只在 CI 里跑，已在 GitHub Actions 上全部通过（见“CI 验证”）。
 - `server/gradlew` + `gradle-wrapper.jar`（8.12.1）、`python/uv.lock`、`web/package-lock.json` 已生成并提交。
 - 本机 Python 是 3.13（规格要求 3.12）；`requires-python >= 3.12`，锁文件跨版本。
 - Python 侧没有用 uv workspace，而是 `python/` 一个项目，`agentobs`、`triage`、`demo`、`eval` 为顶层包，只有 `agentobs` 进 wheel（hatch `packages`）。原因：workspace 会让 SDK 包目录多一层，与规格目录树不一致，单项目更简单且可随时拆。
@@ -84,3 +84,22 @@
 - web：openapi-fetch 在 jsdom 里相对 URL 建 Request 会抛错，`baseUrl` 改为 `window.location.origin`；`fetch` 改为调用时解析，便于测试 spy。
 - web：`@tailwindcss/vite` 4.0.3 在 vite build 时抛 "Cannot convert undefined or null to object"，升级到 4.1.11。
 - Python：`uv.lock` 由 uv 0.13.8 生成，Dockerfile 和 CI 的 uv 版本同步到 0.13.8（0.5.x 读不了新锁文件格式）。
+
+## CI 验证（2026-11-17，GitHub Actions，私有仓库 Hana1025/agentobs）
+
+5 个任务全部通过：secrets、python（含 pgmq 集成测试）、java（19 个测试，含 5 个 Testcontainers IT）、web、api-types。
+
+### 在 CI 上修掉的问题
+
+- deploy/postgres：pgmq 1.6 是纯 SQL 扩展，不产出 `pgmq.so`；镜像改为只拷贝 control 和 SQL 文件。
+- Testcontainers 升到 1.21.4：Spring Boot 3.4.2 自带的 1.20.x 连不上 GitHub runner 上的 Docker 29（要求 API ≥ 1.44）。
+- pgmq 权限：`send` 和 `archive` 都是 `INSERT … RETURNING msg_id`，需要对返回列有 SELECT。pipeline 账号只加了 `q_job_finished.msg_id` 的列级 SELECT，仍然读不到消息内容；triage 账号加了归档表的 SELECT。
+- SchemaAndRolesIT 改用超级用户检查队列存在，并断言 server 账号访问 pgmq 被拒绝（规格 4.3）。
+- secrets：gitleaks-action 首次推送时用 `<root>^..HEAD` 做范围会报错，改为直接用 gitleaks 8.30.1 CLI 扫描全部历史。
+- OpenAPI：新增 `config/RequiredFieldsCustomizer`，基本类型和带 `@NotNull` 的 record 组件标为 required，`Map<String,Object>` 的值描述为任意类型；`web/src/api/schema.ts` 现在是 openapi-typescript 从 `/v3/api-docs` 生成的，CI 的 api-types 任务校验一致。
+- 本地生成 schema 的方法：`./gradlew bootJar`，然后 `java -jar build/libs/*.jar --spring.flyway.enabled=false --spring.datasource.url=jdbc:postgresql://127.0.0.1:1/none --server.port=18080`，再 `npx openapi-typescript http://localhost:18080/v3/api-docs -o src/api/schema.ts`。
+
+## 仍未验证
+
+- `make demo` 整套 compose 起来的端到端效果（collector → server → worker → 看板），以及 M3/M4 里依赖运行环境的验收项（JobStuck 告警、collector 延迟 2 分钟的时序陷阱、nginx 不暴露内部接口、docker stats 内存实测）。
+- 真实模型下的 llm_json / System 2（只跑过 mock）。
