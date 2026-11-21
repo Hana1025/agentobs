@@ -84,6 +84,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       S1_MODEL: ${S1_MODEL:-}
       S2_MODEL: ${S2_MODEL:-}
+      AGENTOBS_PRICING_FILE: ${AGENTOBS_PRICING_FILE:-}
       TRIAGE_METRICS_PORT: "9465"
     depends_on:
       postgres: {condition: service_healthy}

@@ -83,3 +83,35 @@ def test_real_s2_retries_invalid_json_once_then_falls_back():
     assert (
         r.root_cause == "timeout_cascade" and r.confidence == 0.8 and r.evidence[0].span_id == sid
     )
+
+
+def test_real_s2_pricing_fallback_without_provider_cost():
+    import pytest
+
+    from agentobs.core.pricing import PricingTable
+
+    trace = normal_trace()
+    st = extract_state(trace, None)
+    sid = trace["spans"][0]["spanId"]
+    payload = f'{{"root_cause": "scoring_anomaly", "confidence": 0.9, "evidence": [{{"span_id": "{sid}", "attribute": "score", "note": "low"}}], "summary": "low score"}}'
+
+    class _TokenOnlyClient:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            return SimpleNamespace(
+                model="vendor/reasoner-snapshot",
+                choices=[SimpleNamespace(message=SimpleNamespace(content=payload))],
+                usage=SimpleNamespace(prompt_tokens=2000, completion_tokens=500),
+            )
+
+    table = PricingTable.load({"models": {"vendor/reasoner": {"input": 3.0, "output": 15.0}}})
+    r = SystemTwo(_TokenOnlyClient(), model="vendor/reasoner", pricing=table).analyze(
+        st, trace["spans"]
+    )
+    # (2000*3 + 500*15)/1e6 = 0.0135
+    assert r.cost_usd == pytest.approx(0.0135)
+    # 没配价格表时不猜，记 0
+    r_no_price = SystemTwo(_TokenOnlyClient(), model="vendor/reasoner").analyze(st, trace["spans"])
+    assert r_no_price.cost_usd == 0.0

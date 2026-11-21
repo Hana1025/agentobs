@@ -14,7 +14,9 @@ import string
 import time
 from typing import Any
 
+from agentobs.core.pricing import PricingTable
 from triage.models import Answer, Question, TraceState
+from triage.pricing import resolve_usage_cost
 
 log = logging.getLogger("triage")
 
@@ -54,12 +56,14 @@ class LLMJsonDecider:
         samples: int = 5,
         temperature: float = 0.7,
         timeout_s: float = 30,
+        pricing: PricingTable | None = None,
     ):
         self.client = client
         self.model = model
         self.samples = samples
         self.temperature = temperature
         self.timeout_s = timeout_s
+        self.pricing = pricing
         self.last_cost_usd = 0.0
         self.last_latency_s = 0.0
 
@@ -87,10 +91,9 @@ class LLMJsonDecider:
             timeout=self.timeout_s,
             **kw,
         )
-        usage = getattr(resp, "usage", None)
-        cost = getattr(usage, "cost", None) if usage is not None else None
+        cost = resolve_usage_cost(resp, self.model, self.pricing)
         if cost:
-            self.last_cost_usd += float(cost)
+            self.last_cost_usd += cost
         return resp
 
     def _with_logprobs(self, prompt: str, mapping: dict[str, str]) -> dict[str, float] | None:

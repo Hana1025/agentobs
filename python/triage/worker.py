@@ -237,12 +237,15 @@ def main() -> int:
         os.environ.get("AGENTOBS_SERVER_URL", "http://localhost:8080"),
         os.environ.get("AGENTOBS_INTERNAL_TOKEN", ""),
     )
-    decider = make_decider(cfg)
+    from triage.pricing import load_triage_pricing
+
+    pricing = load_triage_pricing(cfg.pricing)
+    decider = make_decider(cfg, pricing=pricing)
     s2 = None
     if cfg.s2.enabled:
         from triage.s2 import make_system_two
 
-        s2 = make_system_two()
+        s2 = make_system_two(pricing=pricing)
     port = int(os.environ.get("TRIAGE_METRICS_PORT", "9465"))
     if port:
         start_http_server(port)

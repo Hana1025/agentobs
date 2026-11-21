@@ -73,6 +73,7 @@ class WorkerConfig(BaseModel):
 
 class TriageConfig(BaseModel):
     backend: Literal["rules", "llm_json", "systemone_http"] = "rules"
+    pricing: str | None = None
     thresholds: Thresholds = Thresholds()
     rules: list[DeclarativeRule] = Field(default_factory=list)
     routing: Routing = Routing()
@@ -94,7 +95,7 @@ class TriageConfig(BaseModel):
     def version(self, backend_name: str, backend_version: str) -> str:
         """规则 + 后端 + 阈值配置的哈希（前 16 位 hex）。"""
         payload = {
-            "config": self.model_dump(exclude={"worker"}),
+            "config": self.model_dump(exclude={"worker", "pricing"}),
             "backend": backend_name,
             "backend_version": backend_version,
         }

@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import random
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import agentobs as ao
 from agentobs.core import attrs
+from agentobs.core.llm import extract_response
 from demo.faults import FaultPlan
-from demo.mock_llm import MockModelCall
+from demo.mock_llm import MockHTTPError, MockModelCall, MockTimeoutError
 from demo.synth import Document
 
 log = logging.getLogger("demo")
@@ -51,8 +53,33 @@ class Pipeline:
         if cfg.live_client is not None:
             client = cfg.live_client
             prompt = json.dumps({"task": stage, "data": payload}, ensure_ascii=False)
-            return ao.llm_call(
-                lambda t: client.chat.completions.create(
+            injected = plan.stage == stage
+            attempt = 0
+
+            def _live_call(t: float) -> Any:
+                nonlocal attempt
+                attempt += 1
+                if injected and plan.all_attempts_503:
+                    raise MockHTTPError(503)
+                if (
+                    injected
+                    and plan.rate_limit_first_attempt
+                    and attempt == 1
+                    and not plan.consumed
+                ):
+                    plan.consumed = True
+                    raise MockHTTPError(429, retry_after=0.2 * cfg.speed)
+                if (
+                    injected
+                    and plan.timeout_all_attempts
+                    and attempt <= plan.timeout_attempts
+                    and not plan.consumed
+                ):
+                    if attempt == plan.timeout_attempts:
+                        plan.consumed = True
+                    time.sleep(min(t, 1.5 * cfg.speed))
+                    raise MockTimeoutError(f"injected timeout after {t}s")
+                resp = client.chat.completions.create(
                     model=model,
                     messages=[
                         {
@@ -63,7 +90,43 @@ class Pipeline:
                     ],
                     response_format={"type": "json_object"},
                     timeout=t,
-                ),
+                )
+                if injected and plan.corrupt_output:
+                    info = extract_response(resp)
+                    text = info.get("text") or json.dumps(payload, ensure_ascii=False)
+                    if attempt == 1:
+                        corrupted = text[: len(text) // 2] + "\\u00zz" + text[len(text) // 2 :]
+                    else:
+                        # 注入未转义的控制字符：json.loads(..., strict=False) 可解析，但 control_chars > 0
+                        base = text.strip()
+                        if base.startswith("{") and base.endswith("}"):
+                            corrupted = base[:-1] + ', "note": "\x07\x1b[0m"}'
+                        else:
+                            corrupted = (
+                                json.dumps(payload, ensure_ascii=False)[:-1]
+                                + ', "note": "\x07\x1b[0m"}'
+                            )
+                    usage: dict[str, Any] = {}
+                    if info.get("input_tokens") is not None:
+                        usage["prompt_tokens"] = info["input_tokens"]
+                    if info.get("output_tokens") is not None:
+                        usage["completion_tokens"] = info["output_tokens"]
+                    if info.get("cost") is not None:
+                        usage["cost"] = info["cost"]
+                    return {
+                        "model": info.get("model") or model,
+                        "choices": [
+                            {
+                                "message": {"role": "assistant", "content": corrupted},
+                                "finish_reason": info.get("finish_reason") or "stop",
+                            }
+                        ],
+                        "usage": usage,
+                    }
+                return resp
+
+            return ao.llm_call(
+                _live_call,
                 provider=cfg.provider,
                 model=model,
                 attempt_timeout_s=cfg.attempt_timeout_s,

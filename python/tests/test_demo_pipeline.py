@@ -63,3 +63,47 @@ def test_missing_page_reports_fewer_pages_mapped(sdk):
 def test_every_fault_type_runs(sdk):
     for ft in FAULT_TYPES:
         _run(sdk, ft)
+
+
+def test_live_client_supports_fault_injection(sdk):
+    import json
+    from types import SimpleNamespace
+
+    class _EchoClient:
+        def __init__(self):
+            self.calls = 0
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            self.calls += 1
+            data = json.loads(kw["messages"][1]["content"])["data"]
+            return {
+                "model": kw["model"],
+                "choices": [{"message": {"content": json.dumps(data)}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 50, "completion_tokens": 20},
+            }
+
+    client = _EchoClient()
+    pipe = Pipeline(
+        PipelineConfig(
+            provider="openai-compatible",
+            speed=0.01,
+            attempt_timeout_s=0.5,
+            deadline_s=2.0,
+            live_client=client,
+        )
+    )
+    doc = make_document("d-live", random.Random(3))
+    plan = plan_fault("output_corruption", random.Random(3))
+    out = pipe.run_job("job-live-corrupt", doc, plan, 3)
+    assert "score" in out
+    spans = finished_spans(sdk)
+    # structure 第一次返回非法转义触发 parse_error 重试，第二次成功但带控制字符
+    struct_chats = [
+        s
+        for s in spans
+        if s.name.startswith("chat") and s.attributes.get(attrs.STAGE) == "structure"
+    ]
+    assert len(struct_chats) == 2
+    assert struct_chats[0].attributes.get(attrs.RETRY_REASON) == "parse_error"
+    assert struct_chats[1].attributes.get(attrs.OUTPUT_CONTROL_CHARS, 0) > 0

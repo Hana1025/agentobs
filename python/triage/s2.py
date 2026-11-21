@@ -16,7 +16,9 @@ from typing import Any
 
 from agentobs.core import attrs
 from agentobs.core.parsers import ParseError, json_object
+from agentobs.core.pricing import PricingTable
 from triage.models import ROOT_CAUSES, Evidence, S2Result, TraceState
+from triage.pricing import load_triage_pricing, resolve_usage_cost
 
 log = logging.getLogger("triage.s2")
 
@@ -95,10 +97,17 @@ def validate(raw: dict[str, Any], span_ids: set[str], model: str, cost: float) -
 
 
 class SystemTwo:
-    def __init__(self, client: Any, model: str, timeout_s: float = 120):
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        timeout_s: float = 120,
+        pricing: PricingTable | None = None,
+    ):
         self.client = client
         self.model = model
         self.timeout_s = timeout_s
+        self.pricing = pricing
 
     def _ask(self, state: TraceState, spans: list[dict[str, Any]]) -> tuple[str, float]:
         user = json.dumps(
@@ -115,8 +124,7 @@ class SystemTwo:
             timeout=self.timeout_s,
         )
         text = resp.choices[0].message.content or ""
-        usage = getattr(resp, "usage", None)
-        cost = float(getattr(usage, "cost", 0.0) or 0.0) if usage is not None else 0.0
+        cost = resolve_usage_cost(resp, self.model, self.pricing)
         return text, cost
 
     def analyze(
@@ -314,11 +322,14 @@ class MockSystemTwo:
         return validate(raw, {s.get("spanId") for s in spans}, self.model, 0.0)
 
 
-def make_system_two(*, offline: bool = False) -> SystemTwo | MockSystemTwo:
+def make_system_two(
+    *, offline: bool = False, pricing: PricingTable | None = None, pricing_path: str | None = None
+) -> SystemTwo | MockSystemTwo:
     api_key = os.environ.get("LLM_API_KEY", "")
     if offline or not api_key:
         return MockSystemTwo()
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url=os.environ.get("LLM_BASE_URL") or None, max_retries=0)
-    return SystemTwo(client, model=os.environ.get("S2_MODEL") or "")
+    table = pricing if pricing is not None else load_triage_pricing(pricing_path)
+    return SystemTwo(client, model=os.environ.get("S2_MODEL") or "", pricing=table)

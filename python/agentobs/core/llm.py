@@ -252,9 +252,14 @@ def _compute_cost(model: str, info: dict[str, Any]) -> float | None:
     """优先供应商返回的费用，没有按 pricing 表算，都没有则 None（不猜）。"""
     if info.get("cost") is not None:
         return round(float(info["cost"]), 6)
-    return state.settings.pricing.cost(
-        info.get("model") or model, info.get("input_tokens"), info.get("output_tokens")
-    )
+    pricing = state.settings.pricing
+    in_tok, out_tok = info.get("input_tokens"), info.get("output_tokens")
+    resp_model = info.get("model")
+    if resp_model:
+        cost = pricing.cost(resp_model, in_tok, out_tok)
+        if cost is not None:
+            return cost
+    return pricing.cost(model, in_tok, out_tok)
 
 
 # ---------- 主逻辑 ----------

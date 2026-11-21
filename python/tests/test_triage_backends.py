@@ -104,3 +104,39 @@ def test_prompt_encodes_options_as_letters():
 def test_systemone_stub_raises():
     with pytest.raises(NotImplementedError):
         SystemOneHttpDecider("http://x").decide(extract_state(normal_trace(), None), [])
+
+
+def test_llm_json_pricing_fallback_without_provider_cost():
+    from agentobs.core.pricing import PricingTable
+
+    class _TokenOnlyOpenAI:
+        def __init__(self, resp_model: str):
+            self.resp_model = resp_model
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            msg = SimpleNamespace(content="A")
+            top = [SimpleNamespace(token="A", logprob=math.log(0.9))]
+            lp = SimpleNamespace(content=[SimpleNamespace(top_logprobs=top)])
+            return SimpleNamespace(
+                model=self.resp_model,
+                choices=[SimpleNamespace(message=msg, logprobs=lp)],
+                usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=10),
+            )
+
+    table = PricingTable.load({"models": {"vendor/small": {"input": 1.0, "output": 2.0}}})
+    st = extract_state(normal_trace(), None)
+    qs = default_questions(st.stage_names())
+    # 供应商返回带日期后缀的 model 名时也能回退到请求的 model 计费
+    d = LLMJsonDecider(
+        _TokenOnlyOpenAI("vendor/small-2026-01"), model="vendor/small", pricing=table
+    )
+    d.decide(st, qs)
+    # 每题 (1000*1.0 + 10*2.0)/1e6 = 0.00102
+    assert d.last_cost_usd == pytest.approx(0.00102 * len(qs))
+
+    # 改 pricing 字段不应影响 triage_version 哈希
+    cfg = TriageConfig.load()
+    v1 = cfg.version("llm_json", "1")
+    cfg.pricing = "/tmp/pricing.yaml"
+    assert cfg.version("llm_json", "1") == v1
