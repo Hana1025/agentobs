@@ -24,6 +24,7 @@ class CaseResult:
     s2_root_cause: str | None = None
     s2_confidence: float | None = None
     cost_usd: float = 0.0
+    s2_cost_usd: float = 0.0
     latency_s: float = 0.0
     rules_fired: list[str] = field(default_factory=list)
 
@@ -126,6 +127,17 @@ def compute(results: list[CaseResult], bins: int = 10) -> dict[str, Any]:
         k: int((np.array([r.route for r in results]) == k).sum())
         for k in ("pass", "alert", "escalate")
     }
+    s2_ran_costs = [
+        r.s2_cost_usd for r in results if r.route == "escalate" and r.s2_root_cause is not None
+    ]
+    s2_avg_cost = float(np.mean(s2_ran_costs)) if s2_ran_costs else None
+    all_s2_estimated = float(s2_avg_cost * n) if s2_avg_cost is not None else None
+    cost_total = float(costs.sum())
+    cost_saving_ratio = (
+        float(1.0 - cost_total / all_s2_estimated)
+        if (all_s2_estimated is not None and all_s2_estimated > 0)
+        else None
+    )
 
     return {
         "n": n,
@@ -144,7 +156,10 @@ def compute(results: list[CaseResult], bins: int = 10) -> dict[str, Any]:
         "routes": routes,
         "escalation_rate": routes["escalate"] / n,
         "cost_per_case_usd": float(costs.mean()),
-        "cost_total_usd": float(costs.sum()),
+        "cost_total_usd": cost_total,
+        "s2_avg_cost_usd": s2_avg_cost,
+        "all_s2_estimated_cost_usd": all_s2_estimated,
+        "cost_saving_ratio": cost_saving_ratio,
         "latency_p50_s": float(np.percentile(lat, 50)),
         "latency_p95_s": float(np.percentile(lat, 95)),
     }
@@ -164,10 +179,16 @@ def markdown_summary(
         f"- 可疑阶段准确率：{pct(m.get('suspect_stage_accuracy'))}",
         f"- 单条成本：${m.get('cost_per_case_usd', 0):.5f}；p50/p95 延迟：{m.get('latency_p50_s', 0):.3f}s / {m.get('latency_p95_s', 0):.3f}s",
     ]
-    if all_s2_cost is not None:
-        lines.append(
-            f"- 对照：全部直接交给 System 2 的成本 ${all_s2_cost:.4f}（分层总成本 ${m.get('cost_total_usd', 0):.4f}）"
+    baseline_s2 = all_s2_cost if all_s2_cost is not None else m.get("all_s2_estimated_cost_usd")
+    if baseline_s2 is not None:
+        total = m.get("cost_total_usd", 0.0)
+        saving = f"，节省 {(1.0 - total / baseline_s2) * 100:.1f}%" if baseline_s2 > 0 else ""
+        label = (
+            "全部直接交给 System 2 的成本"
+            if all_s2_cost is not None
+            else "估算全部交给 System 2 的成本"
         )
+        lines.append(f"- 对照：{label} ${baseline_s2:.4f}（分层总成本 ${total:.4f}{saving}）")
     lines += ["", "| fault_type | 召回 |", "| --- | --- |"]
     for k, v in sorted(m.get("recall_by_fault_type", {}).items()):
         lines.append(f"| {k} | {pct(v)} |")

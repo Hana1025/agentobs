@@ -2,6 +2,7 @@ package dev.agentobs.review;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.agentobs.query.BadRequestException;
 import dev.agentobs.query.NotFoundException;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,6 +39,17 @@ public class EvalController {
             @JsonProperty("expected_root_cause") String expectedRootCause,
             @JsonProperty("state_snapshot") @NotNull Map<String, Object> stateSnapshot) {}
 
+    public record EvalCaseDto(
+            long id,
+            @JsonProperty("trace_id") String traceId,
+            @JsonProperty("source") @NotBlank String source,
+            @JsonProperty("fault_type") String faultType,
+            @JsonProperty("expected_label") @NotBlank String expectedLabel,
+            @JsonProperty("expected_stage") String expectedStage,
+            @JsonProperty("expected_root_cause") String expectedRootCause,
+            @JsonProperty("state_snapshot") @NotNull Map<String, Object> stateSnapshot,
+            @JsonProperty("created_at") @NotNull OffsetDateTime createdAt) {}
+
     public record EvalCasesRequest(@NotNull List<@Valid EvalCase> cases) {}
 
     public record EvalRunRequest(
@@ -54,6 +67,33 @@ public class EvalController {
     public EvalController(JdbcTemplate jdbc, ObjectMapper om) {
         this.jdbc = jdbc;
         this.om = om;
+    }
+
+    @GetMapping("/api/internal/eval-cases")
+    @Hidden
+    public List<EvalCaseDto> listEvalCases(
+            @RequestParam(required = false) String source,
+            @RequestParam(defaultValue = "500") int limit) {
+        if (limit < 1 || limit > 2000) {
+            throw new BadRequestException("limit must be between 1 and 2000");
+        }
+        if (source != null && !source.isBlank()) {
+            return jdbc.query("""
+                    SELECT id, trace_id, source, fault_type, expected_label, expected_stage,
+                           expected_root_cause, state_snapshot::text AS state_json, created_at
+                    FROM obs.eval_cases
+                    WHERE source = ?
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                    """, CASE_ROW, source, limit);
+        }
+        return jdbc.query("""
+                SELECT id, trace_id, source, fault_type, expected_label, expected_stage,
+                       expected_root_cause, state_snapshot::text AS state_json, created_at
+                FROM obs.eval_cases
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """, CASE_ROW, limit);
     }
 
     @PostMapping("/api/internal/eval-cases")
@@ -99,6 +139,20 @@ public class EvalController {
     private final RowMapper<EvalRunDto> ROW = (rs, i) -> new EvalRunDto(
             rs.getLong("id"), rs.getString("backend"), rs.getString("triage_version"), rs.getInt("dataset_size"),
             parse(rs.getString("metrics_json")), rs.getObject("created_at", OffsetDateTime.class));
+
+    private final RowMapper<EvalCaseDto> CASE_ROW = (rs, i) -> {
+        String tid = rs.getString("trace_id");
+        return new EvalCaseDto(
+                rs.getLong("id"),
+                tid != null ? tid.trim() : null,
+                rs.getString("source"),
+                rs.getString("fault_type"),
+                rs.getString("expected_label"),
+                rs.getString("expected_stage"),
+                rs.getString("expected_root_cause"),
+                parse(rs.getString("state_json")),
+                rs.getObject("created_at", OffsetDateTime.class));
+    };
 
     private String json(Object o) {
         try {

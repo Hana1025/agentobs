@@ -18,11 +18,17 @@ from typing import Any
 
 import yaml
 
-from eval.dataset import EvalCase, build_offline_dataset, fetch_from_server
+from eval.dataset import (
+    EvalCase,
+    build_offline_dataset,
+    fetch_eval_cases_from_server,
+    fetch_from_server,
+)
 from eval.metrics import CaseResult, compute, markdown_summary
 from triage.backends import make_decider
 from triage.config import TriageConfig
 from triage.models import Answer, TraceState, default_questions
+from triage.pricing import load_triage_pricing
 from triage.router import route
 from triage.rules import evaluate
 from triage.s2 import make_system_two
@@ -35,9 +41,10 @@ def evaluate_backend(
     cfg: TriageConfig, backend: str, cases: list[EvalCase], *, offline: bool, with_s2: bool
 ) -> tuple[dict[str, Any], str]:
     cfg.backend = backend  # type: ignore[assignment]
-    decider = make_decider(cfg, offline=offline)
+    pricing = load_triage_pricing(cfg.pricing)
+    decider = make_decider(cfg, offline=offline, pricing=pricing)
     version = cfg.version(decider.name, decider.version)
-    s2 = make_system_two(offline=offline) if with_s2 else None
+    s2 = make_system_two(offline=offline, pricing=pricing) if with_s2 else None
     results: list[CaseResult] = []
     for c in cases:
         state = TraceState.model_validate(c.state_snapshot)
@@ -50,9 +57,11 @@ def evaluate_backend(
         r = route(answers, fired, cfg.routing)
         cost = float(getattr(decider, "last_cost_usd", 0.0) or 0.0)
         s2_rc = s2_conf = None
+        s2_cost = 0.0
         if r == "escalate" and s2 is not None and c.trace is not None:
             res = s2.analyze(state, c.trace["spans"])
-            s2_rc, s2_conf, cost = res.root_cause, res.confidence, cost + res.cost_usd
+            s2_rc, s2_conf, s2_cost = res.root_cause, res.confidence, res.cost_usd
+            cost += s2_cost
         results.append(
             CaseResult(
                 fault_type=c.fault_type,
@@ -66,6 +75,7 @@ def evaluate_backend(
                 s2_root_cause=s2_rc,
                 s2_confidence=s2_conf,
                 cost_usd=cost,
+                s2_cost_usd=s2_cost,
                 latency_s=time.monotonic() - t0,
                 rules_fired=state.rules_fired,
             )
@@ -73,11 +83,33 @@ def evaluate_backend(
     return compute(results), version
 
 
-def all_s2_cost(cases: list[EvalCase], *, offline: bool) -> float | None:
-    """对照：全部直接交给 System 2 的成本（mock 为 0；真实模型时按实际计）。"""
+def all_s2_cost(
+    cases: list[EvalCase],
+    *,
+    offline: bool,
+    s2: Any | None = None,
+    run_actual: bool = False,
+) -> float | None:
+    """对照：全部直接交给 System 2 的成本。
+
+    - offline（mock）为 0.0；
+    - run_actual=True 且提供 s2 时，对每条有完整 trace 的样本实际调用 S2 累加真实费用；
+    - 否则返回 None，由 markdown_summary 回退到基于实际升级样本均值推算的 all_s2_estimated_cost_usd。
+    """
     if offline:
         return 0.0
-    return None
+    if not run_actual or s2 is None:
+        return None
+    total = 0.0
+    ran = 0
+    for c in cases:
+        if c.trace is None:
+            continue
+        state = TraceState.model_validate(c.state_snapshot)
+        res = s2.analyze(state, c.trace["spans"])
+        total += float(res.cost_usd or 0.0)
+        ran += 1
+    return round(total, 6) if ran else None
 
 
 def check_gates(all_metrics: dict[str, dict[str, Any]], gates: dict[str, Any]) -> list[str]:
@@ -106,6 +138,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--size", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--no-s2", action="store_true")
+    p.add_argument(
+        "--all-s2-actual",
+        action="store_true",
+        help="真实模型模式下对全量样本实跑 S2 计算精确对照成本（默认按升级样本均值推算）",
+    )
+    p.add_argument(
+        "--source",
+        choices=["traces", "human_review", "eval_cases", "all"],
+        default="traces",
+        help="在线数据集来源：traces(默认,injected) | human_review(人工复核) | eval_cases(全部入库) | all(traces+human_review)",
+    )
     p.add_argument("--project", default="demo")
     p.add_argument("--days", type=int, default=7, help="从 server 拉取最近 N 天")
     args = p.parse_args(argv)
@@ -115,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     gates = yaml.safe_load(GATES.read_text(encoding="utf-8"))
     backends = args.backend or gates["backends"]
     offline_models = not args.live
-    TriageConfig.load()
+    base_cfg = TriageConfig.load()
 
     client = None
     if args.offline:
@@ -131,12 +174,30 @@ def main(argv: list[str] | None = None) -> int:
             os.environ.get("AGENTOBS_INTERNAL_TOKEN", ""),
         )
         to = datetime.now(UTC)
-        cases = fetch_from_server(
-            client, args.project, (to - timedelta(days=args.days)).isoformat(), to.isoformat()
-        )
-        if cases:
-            print(client.post_eval_cases([c.payload() for c in cases]))
-    print(f"dataset: {len(cases)} cases ({'offline' if args.offline else 'server'})")
+        if args.source == "traces":
+            cases = fetch_from_server(
+                client, args.project, (to - timedelta(days=args.days)).isoformat(), to.isoformat()
+            )
+            if cases:
+                print(client.post_eval_cases([c.payload() for c in cases]))
+        elif args.source == "human_review":
+            cases = fetch_eval_cases_from_server(
+                client, source="human_review", fetch_traces=not args.no_s2
+            )
+        elif args.source == "eval_cases":
+            cases = fetch_eval_cases_from_server(client, source=None, fetch_traces=not args.no_s2)
+        else:  # all: 新拉取的 injected trace + 已入库的 human_review 用例
+            tr_cases = fetch_from_server(
+                client, args.project, (to - timedelta(days=args.days)).isoformat(), to.isoformat()
+            )
+            if tr_cases:
+                print(client.post_eval_cases([c.payload() for c in tr_cases]))
+            hr_cases = fetch_eval_cases_from_server(
+                client, source="human_review", fetch_traces=not args.no_s2
+            )
+            seen = {(c.trace_id, c.source) for c in tr_cases if c.trace_id}
+            cases = tr_cases + [c for c in hr_cases if (c.trace_id, c.source) not in seen]
+    print(f"dataset: {len(cases)} cases ({'offline' if args.offline else f'server:{args.source}'})")
     if not cases:
         print("no eval cases", file=sys.stderr)
         return 2
@@ -152,10 +213,17 @@ def main(argv: list[str] | None = None) -> int:
     md = [
         f"# eval {stamp}",
         "",
-        f"样本数 {len(cases)}，{'离线' if args.offline else 'server'} 数据集。",
+        f"样本数 {len(cases)}，{'离线' if args.offline else f'server({args.source})'} 数据集。",
         "",
     ]
-    s2_cost = all_s2_cost(cases, offline=offline_models)
+    s2_baseline = (
+        make_system_two(offline=offline_models, pricing=load_triage_pricing(base_cfg.pricing))
+        if (args.all_s2_actual and not args.no_s2 and not offline_models)
+        else None
+    )
+    s2_cost = all_s2_cost(
+        cases, offline=offline_models, s2=s2_baseline, run_actual=args.all_s2_actual
+    )
     for b in backends:
         m, version = evaluate_backend(
             TriageConfig.load(), b, cases, offline=offline_models, with_s2=not args.no_s2

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from eval.dataset import build_offline_dataset
-from eval.metrics import CaseResult, compute
-from eval.run import check_gates, evaluate_backend
+from eval.dataset import EvalCase, build_offline_dataset, fetch_eval_cases_from_server
+from eval.metrics import CaseResult, compute, markdown_summary
+from eval.run import all_s2_cost, check_gates, evaluate_backend
 from triage.config import TriageConfig
 
 GATES = {"fault_recall_min": {"rules": 0.6, "llm_json": 0.9}, "normal_false_positive_max": 0.1}
@@ -124,3 +124,99 @@ def test_removing_builtin_rule_breaks_gate(dataset, monkeypatch):
     m, _ = evaluate_backend(cfg, "rules", dataset, offline=True, with_s2=False)
     assert m["recall_by_fault_type"]["provider_failure"] == 0.0
     assert check_gates({"rules": m}, GATES)
+
+
+def test_metrics_and_markdown_estimate_all_s2_cost_savings():
+    rs = [
+        CaseResult("none", "normal", None, None, "normal", 0.95, "pass", "none", cost_usd=0.001),
+        CaseResult("none", "normal", None, None, "normal", 0.92, "pass", "none", cost_usd=0.001),
+        CaseResult("none", "normal", None, None, "normal", 0.91, "pass", "none", cost_usd=0.001),
+        CaseResult(
+            "provider_failure",
+            "failed",
+            "infrastructure",
+            "provider_failure",
+            "failed",
+            0.9,
+            "escalate",
+            "infrastructure",
+            s2_root_cause="provider_failure",
+            s2_confidence=0.9,
+            cost_usd=0.021,
+            s2_cost_usd=0.02,
+        ),
+    ]
+    m = compute(rs, bins=10)
+    assert m["s2_avg_cost_usd"] == pytest.approx(0.02)
+    assert m["all_s2_estimated_cost_usd"] == pytest.approx(0.08)
+    assert m["cost_total_usd"] == pytest.approx(0.024)
+    assert m["cost_saving_ratio"] == pytest.approx(0.7)
+    md = markdown_summary("llm_json", "v1", m, all_s2_cost=None)
+    assert "估算全部交给 System 2 的成本 $0.0800" in md
+    assert "节省 70.0%" in md
+
+
+def test_all_s2_cost_actual_mode():
+    from types import SimpleNamespace
+
+    from tests.trace_fixtures import normal_trace
+    from triage.state import extract_state
+
+    t = normal_trace()
+    st = extract_state(t, None).model_dump(exclude_none=True)
+    cases = [
+        EvalCase("t1", "injected", "none", "normal", None, None, st, trace=t),
+        EvalCase("t2", "human_review", "other", "suspicious", None, None, st, trace=None),
+    ]
+
+    class _FakeS2:
+        def analyze(self, state, spans):
+            return SimpleNamespace(cost_usd=0.015)
+
+    assert all_s2_cost(cases, offline=True) == 0.0
+    assert all_s2_cost(cases, offline=False, s2=_FakeS2(), run_actual=False) is None
+    assert all_s2_cost(cases, offline=False, s2=_FakeS2(), run_actual=True) == pytest.approx(0.015)
+
+
+def test_fetch_eval_cases_from_server_handles_human_review_and_missing_trace():
+    from tests.trace_fixtures import normal_trace
+    from triage.state import extract_state
+
+    t = normal_trace()
+    st = extract_state(t, None).model_dump(exclude_none=True)
+
+    class _FakeClient:
+        def get_eval_cases(self, source=None, limit=500):
+            assert source == "human_review"
+            return [
+                {
+                    "id": 1,
+                    "trace_id": "a" * 32,
+                    "source": "human_review",
+                    "fault_type": None,
+                    "expected_label": "failed",
+                    "expected_stage": "extract",
+                    "expected_root_cause": "provider_failure",
+                    "state_snapshot": st,
+                },
+                {
+                    "id": 2,
+                    "trace_id": "b" * 32,
+                    "source": "human_review",
+                    "fault_type": None,
+                    "expected_label": "normal",
+                    "expected_stage": None,
+                    "expected_root_cause": None,
+                    "state_snapshot": st,
+                },
+            ]
+
+        def get_trace(self, trace_id):
+            if trace_id == "a" * 32:
+                return t
+            return None  # 模拟 90 天后原 trace 已被清理
+
+    cases = fetch_eval_cases_from_server(_FakeClient(), source="human_review", fetch_traces=True)
+    assert len(cases) == 2
+    assert cases[0].fault_type == "provider_failure" and cases[0].trace is not None
+    assert cases[1].fault_type == "none" and cases[1].trace is None

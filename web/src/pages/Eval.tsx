@@ -8,6 +8,9 @@ interface Metrics {
   normal_false_positive_rate?: number;
   ece?: number;
   cost_per_case_usd?: number;
+  cost_total_usd?: number;
+  all_s2_estimated_cost_usd?: number;
+  cost_saving_ratio?: number;
   latency_p50_s?: number;
   latency_p95_s?: number;
   s2_root_cause_accuracy?: number;
@@ -77,13 +80,19 @@ export default function EvalPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Chart title="可靠性曲线" option={reliabilityOption(m)} />
           <Chart title="覆盖率 — 准确率" option={coverageOption(m)} />
-          <div className="card p-3 text-sm lg:col-span-2">
-            <div className="font-semibold mb-2">按故障类型的召回</div>
+          <div className="card p-3 text-sm lg:col-span-2 space-y-2">
+            <div className="font-semibold">按故障类型的召回</div>
             <div className="flex flex-wrap gap-3">
               {Object.entries(m.recall_by_fault_type ?? {}).map(([k, v]) => (
                 <span key={k} className="badge">{k}: {pct(v)}</span>
               ))}
             </div>
+            {m.all_s2_estimated_cost_usd != null && (
+              <div className="muted text-xs pt-1">
+                成本对照：分层总成本 {fmtUsd(m.cost_total_usd)} / 估算全量 System 2 成本 {fmtUsd(m.all_s2_estimated_cost_usd)}
+                {m.cost_saving_ratio != null ? `（节省 ${pct(m.cost_saving_ratio)}）` : ""}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -42,6 +42,14 @@ class ServerClient:
         r.raise_for_status()
         return r.json()
 
+    def get_eval_cases(self, source: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": limit}
+        if source:
+            params["source"] = source
+        r = self._c.get("/api/internal/eval-cases", params=params)
+        r.raise_for_status()
+        return r.json()
+
     def post_eval_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         r = self._c.post("/api/internal/eval-runs", json=payload)
         r.raise_for_status()

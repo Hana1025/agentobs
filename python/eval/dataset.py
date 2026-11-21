@@ -253,3 +253,45 @@ def fetch_from_server(
         if (page + 1) * 100 >= res["total"]:
             break
     return cases
+
+
+def fetch_eval_cases_from_server(
+    client: Any,
+    source: str | None = None,
+    limit: int = 500,
+    *,
+    fetch_traces: bool = True,
+) -> list[EvalCase]:
+    """从 server 的 obs.eval_cases 表拉取评测用例（支持 human_review / injected / 全部）。
+
+    原 trace 已被数据保留策略清理时仍可用 state_snapshot 跑 S1（trace 为 None，跳过 S2）。
+    """
+    rows = client.get_eval_cases(source=source, limit=limit)
+    cases: list[EvalCase] = []
+    for row in rows:
+        tid = row.get("trace_id")
+        trace = None
+        if fetch_traces and tid:
+            try:
+                trace = client.get_trace(tid)
+            except Exception:  # noqa: BLE001
+                trace = None
+        expected_label = row["expected_label"]
+        fault_type = (
+            row.get("fault_type")
+            or row.get("expected_root_cause")
+            or ("none" if expected_label == "normal" else row.get("source") or "unknown")
+        )
+        cases.append(
+            EvalCase(
+                trace_id=tid,
+                source=row["source"],
+                fault_type=fault_type,
+                expected_label=expected_label,
+                expected_stage=row.get("expected_stage"),
+                expected_root_cause=row.get("expected_root_cause"),
+                state_snapshot=row["state_snapshot"],
+                trace=trace,
+            )
+        )
+    return cases

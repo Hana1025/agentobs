@@ -106,4 +106,37 @@ class ReviewAndEvalIT extends PostgresTestBase {
         assertThat(rest.getForEntity("/api/eval/runs/" + first.get("id"), Map.class).getStatusCode().value()).isEqualTo(200);
         assertThat(rest.getForEntity("/api/eval/runs/999999", String.class).getStatusCode().value()).isEqualTo(404);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listEvalCasesFiltersBySourceAndValidatesLimit() {
+        // 先提交一条人工复核产生 human_review 用例，再写入一条 injected 用例
+        String reviewBody = "{\"triage_id\": " + triageId + ", \"human_label\": \"failed\", \"human_root_cause\": \"provider_failure\"}";
+        assertThat(rest.postForEntity("/api/reviews", new HttpEntity<>(reviewBody, json("alice")), Map.class).getStatusCode().value()).isEqualTo(200);
+
+        HttpHeaders h = json(null);
+        h.set("X-Agentobs-Token", "internal-test-token");
+        String injected = """
+                {"cases": [
+                  {"trace_id": "%s", "source": "injected", "fault_type": "missing_page", "expected_label": "suspicious",
+                   "expected_stage": "structure", "expected_root_cause": "missing_or_misclassified_input", "state_snapshot": {"job": {}}}
+                ]}""".formatted(OtlpFixtures.TRACE_ID);
+        assertThat(rest.postForEntity("/api/internal/eval-cases", new HttpEntity<>(injected, h), Map.class).getStatusCode().value()).isEqualTo(200);
+
+        ResponseEntity<List> all = rest.exchange("/api/internal/eval-cases", org.springframework.http.HttpMethod.GET, new HttpEntity<>(h), List.class);
+        assertThat(all.getStatusCode().value()).isEqualTo(200);
+        assertThat(all.getBody()).hasSize(2);
+
+        ResponseEntity<List> humanOnly = rest.exchange("/api/internal/eval-cases?source=human_review", org.springframework.http.HttpMethod.GET, new HttpEntity<>(h), List.class);
+        assertThat(humanOnly.getStatusCode().value()).isEqualTo(200);
+        assertThat(humanOnly.getBody()).hasSize(1);
+        Map<String, Object> item = (Map<String, Object>) humanOnly.getBody().get(0);
+        assertThat(item.get("source")).isEqualTo("human_review");
+        assertThat(item.get("expected_label")).isEqualTo("failed");
+        assertThat(item.get("expected_root_cause")).isEqualTo("provider_failure");
+        assertThat(item.get("trace_id")).isEqualTo(OtlpFixtures.TRACE_ID);
+
+        assertThat(rest.exchange("/api/internal/eval-cases?limit=0", org.springframework.http.HttpMethod.GET, new HttpEntity<>(h), String.class).getStatusCode().value()).isEqualTo(400);
+        assertThat(rest.exchange("/api/internal/eval-cases?limit=5000", org.springframework.http.HttpMethod.GET, new HttpEntity<>(h), String.class).getStatusCode().value()).isEqualTo(400);
+    }
 }
