@@ -1,6 +1,12 @@
-# secrets
+# secrets & local overrides / real data
 .env
 *.env.local
+*.local.yaml
+*.local.yml
+pricing.yaml
+*.dump
+*.sql.gz
+data/real/
 
 # python
 __pycache__/

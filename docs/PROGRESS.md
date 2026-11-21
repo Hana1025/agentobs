@@ -140,3 +140,19 @@ CI 全部 6 个任务通过（新增 deploy-config），包括 RabbitMQ 和 pgmq
 - `test_removing_builtin_rule_breaks_gate` 依赖真实耗时，偶发失败；测试里同时关掉 slow_stage / cost_spike 阈值。
 
 仍未验证：JobStuck 告警触发、collector 人为延迟 2 分钟、真实模型下的 llm_json / System 2、`make demo-rabbitmq` 和 `make demo-langfuse` 的端到端运行。
+
+## P0 需求补全与功能验证（2026-11-21）
+
+补齐了切换真实模型与人工复核闭环相关的遗留项：
+
+- **S1/S2 本地价格表计费兜底**：新增 `triage/pricing.py`（`load_triage_pricing`、`resolve_usage_cost`），`LLMJsonDecider` 和 `SystemTwo` 在供应商不直接返回 `usage.cost` 时按 `PricingTable`（优先匹配响应 model、回退请求 model）计算费用；`TriageConfig` 支持可选 `pricing`（不参与 `triage_version` 哈希），`compose.yaml` 与 `.env.example` 透传 `AGENTOBS_PRICING_FILE`；SDK `_compute_cost` 同步补齐请求 model 回退。
+- **全量 System 2 成本对照**：`eval/metrics.py` 增加 `s2_cost_usd`、`s2_avg_cost_usd`、`all_s2_estimated_cost_usd`、`cost_saving_ratio`；`eval/run.py` 的 `all_s2_cost()` 支持 `--all-s2-actual` 实跑全量对照，默认按实际升级样本的 S2 均值推算节省比例；前端 `Eval.tsx` 展示分层成本对照。
+- **`human_review` 复核用例回流评测闭环**：server `EvalController` 新增内部接口 `GET /api/internal/eval-cases`（支持 `source` 过滤与 `limit` 校验，带 `@Hidden` 不改公开 OpenAPI schema）；`ServerClient.get_eval_cases`、`eval/dataset.py`（`fetch_eval_cases_from_server`，兼容原 trace 已被清理的场景）和 `eval/run.py --source {traces,human_review,eval_cases,all}` 串联闭环。
+- **Demo Live 模式故障注入**：`demo/pipeline.py` 的 `live_client` 分支补齐 `provider_failure`、`transient_rate_limit`、`timeout_cascade`、`output_corruption` 注入能力（含未转义控制字符注入）。
+- **防误提交加固**：`.gitignore` 新增 `*.local.yaml`、`*.local.yml`、`pricing.yaml`、`*.dump`、`*.sql.gz`、`data/real/`。
+
+功能验证结果（本机 Windows；Docker Desktop 未启动，Testcontainers 集成测试待 Docker 启动或 CI 验证）：
+
+- Python：`ruff format --check` / `ruff check` 通过；pytest 75 passed（新增 6 项单测覆盖价格表兜底、S2 成本对照、`human_review` 拉取与缺失 trace 降级、Demo live 故障注入）；离线 300 样本 `eval --offline --gate` 通过；`examples.run_all` 通过。
+- Java：`./gradlew compileJava compileTestJava test -PskipIT` 通过（`ReviewAndEvalIT` 新增 `listEvalCasesFiltersBySourceAndValidatesLimit` 编译通过，待 Docker/CI 执行）。
+- Web：`vitest --run` 15 passed、`eslint`、`tsc -b --noEmit`、`vite build` 全部通过。
